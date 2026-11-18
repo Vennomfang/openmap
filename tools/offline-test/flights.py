@@ -34,6 +34,9 @@ function S.FromYards(c, x, y) return 0.5, 0.5 end
 function S.Look() end
 setmetatable(S, { __index = function() return function() end end })
 mod = { defaults = {}, db = { flight = true, foundOnly = false }, char = { flightsKnownV = 2 } }
+-- (WorldMap.lua's: Only places you've found, and Explore to reveal, which sets it)
+function mod.FoundOnly() return (mod.db.foundOnly or mod.db.exploreReveal) and true or false end
+function mod.ExploreReveal() return mod.db.exploreReveal and true or false end
 ns = { MapStitch = S, MapFlights = {
 	nodes = { [1] = { "Crossroads, The Barrens", 1, 0, 0, 3 }, [2] = { "Orgrimmar, Durotar", 1, 0, 0, 3 } },
 	paths = {} },

@@ -60,6 +60,7 @@ class CaveTests(unittest.TestCase):
             setmetatable(S, { __index = function() return function() end end })
 
             mod = { defaults = {}, db = { underground = true } }
+            function mod.ExploreReveal() return mod.db.exploreReveal and true or false end   -- (WorldMap.lua's)
             ns = { MapStitch = S, Media = { path = "Interface\\\\AddOns\\\\OpenMap\\\\Media\\\\", tex = "Interface\\\\AddOns\\\\OpenMap\\\\Media\\\\Textures\\\\Forever\\\\" }, Client = "Forever",
                 L = setmetatable({}, { __index = function(_, k) return k end }) }
             function ns:GetModule() return mod end
@@ -181,6 +182,22 @@ class CaveTests(unittest.TestCase):
             assert(S.CaveRectAt(u, v) == nil, 'the zoom goes on with caves off')
             Look(u, v, 0.001, 120)
             assert(#Shown() == 0)
+        """)
+
+    def test_explore_to_reveal_stops_the_zoom_over_a_hidden_cave(self):
+        # (S.CaveRectAt lets the zoom go on in over a cave: not, with Explore to reveal, over one under land
+        # still hidden, which doesn't surface; as before with the option off, or once the land's explored)
+        self.lua.execute("""
+            local _, c = Pick(0, 150, 300)
+            local u, v = Middle(c)
+            local hidden, asked = true, 0
+            function S.HiddenAt() asked = asked + 1 return hidden end
+            assert(S.CaveRectAt(u, v), 'off: the zoom goes on over it, hidden land or not')
+            assert(asked == 0, 'off: the land not even asked about')
+            mod.db.exploreReveal = true
+            assert(S.CaveRectAt(u, v) == nil, 'on: not over a cave under hidden land')
+            hidden = false
+            assert(S.CaveRectAt(u, v), 'on, the land explored: over it again')
         """)
 
     def test_the_cave_at_an_entrance(self):

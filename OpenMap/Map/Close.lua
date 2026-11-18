@@ -677,6 +677,8 @@ function S.CaveRectAt(u, v)
 		local r = RectOf(-i)
 		if r then best, area = Nearest(r, u, v, best, area) end
 	end
+	-- (Explore to reveal: not one under land still hidden, which doesn't surface; the zoom stops as anywhere)
+	if best and mod.ExploreReveal() and S.HiddenAt and S.HiddenAt((best[1] + best[3]) / 2, (best[2] + best[4]) / 2) then return end
 	if best then return best[1], best[2], best[3], best[4] end
 end
 
@@ -848,7 +850,8 @@ function S.SetView(u, v, hu, hv, zoom, steps)
 	Try("minimap", UpdateMinimap, L.minimap, conts, u, v, hu, hv, mix)
 	Try("underground cities' minimap", UpdateCityMinimap, u, v, hu, hv, inside)
 	cv.gapTiles = Try("minimap in the gaps", UpdateGapMinimap, conts, u, v, hu, hv,
-		mod.db.minimap and mod.db.gapMinimap and GAP_MIX * Smooth(steps, GAP_FADE) or 0)
+		-- (not with Explore to reveal: the land between the zones has nothing to explore, so it's never found)
+		mod.db.minimap and mod.db.gapMinimap and not mod.ExploreReveal() and GAP_MIX * Smooth(steps, GAP_FADE) or 0)
 	local under = Try("underground", UpdateUnderground, L.under, cont, u, v, hu, hv, steps) or 0
 	-- the out-of-focus world above a cave gets heavier grain
 	Try("grain", UpdateGrain, L.grain, u, v, hu, hv, math.max(soft, math.min(1.4, under * 1.4)))
@@ -886,7 +889,10 @@ function mod:CloseOptions(opts, get, set, off)
 		desc = ns.L["The most the minimap's detail ever shows, at any zoom: zooming in past where the painted map has any detail left, it takes over toward this."] }
 	opts.cityMinimap = { type = "toggle", name = ns.L["Minimap detail in major cities"], order = 51.4, get = get, set = set, disabled = noMinimap,
 		desc = ns.L["The minimap's detail over the six major cities' own maps, at half strength at most so the city's plan leads. Off: their own maps alone."] }
-	opts.gapMinimap = { type = "toggle", name = ns.L["Minimap in the gaps (experimental)"], order = 51.5, get = get, set = set, disabled = noMinimap,
+	-- (off while Explore to reveal is on, which nothing in the gaps can be found for: greyed, its own setting kept)
+	opts.gapMinimap = { type = "toggle", name = ns.L["Minimap in the gaps (experimental)"], order = 51.5, set = set,
+		get = function() return mod.db.gapMinimap and not mod.ExploreReveal() end,
+		disabled = function() return noMinimap() or mod.ExploreReveal() end,
 		hidden = function() return not ns.MapGaps end,   -- (a client with no gaps between its zones)
 		desc = ns.L["Land no zone map covers (west of Searing Gorge, Mount Hyjal ...) shows the game's minimap of it, tinted like the zones around it, instead of blank paper."] }
 	opts.soften = { type = "toggle", name = ns.L["Soften and add paper grain"], order = 52, get = get, set = set, disabled = off,

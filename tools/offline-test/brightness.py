@@ -61,6 +61,7 @@ class BrightnessTests(unittest.TestCase):
         S.SetWorldPinsHidden = noop
         S.SetPlacesFrom = noop
         S.SetFoundOnly = noop
+        S.SetExploreReveal = noop
         S.SetIconScale = noop
         S.SetGapFillsShown = noop
         S.ApplyGrade = noop

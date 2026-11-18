@@ -96,6 +96,8 @@ mod = { db = { padView = true }, enabled = false }
 function mod.PadUI() return true end
 function mod.Refresh() end
 function mod.Unexplored() return "show" end
+function mod.FoundOnly() return false end
+function mod.ExploreReveal() return false end
 ns = { MapStitch = S, L = setmetatable({}, { __index = function(_, k) return k end }) }
 function ns:GetModule() return mod end
 function ns:Print() end

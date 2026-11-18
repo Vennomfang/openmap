@@ -200,7 +200,8 @@ local TABS = {
 }
 
 -- the checklist: { header, tab = } or { label, get, set, id = a name for it that doesn't change
--- (favourites), icon = }
+-- (favourites), icon = }; note =: a second line under it; locked =: set by another setting for now, shown as
+-- it is and not to be clicked
 local function Rows()
 	local db = mod.db
 	local function opt(key) return function() return db[key] end, function(v) db[key] = v mod:Refresh() end end
@@ -209,6 +210,13 @@ local function Rows()
 	local faction = ns.Safe.Call(UnitFactionGroup, "player")
 	local loaded = C_AddOns and C_AddOns.IsAddOnLoaded or IsAddOnLoaded
 	local questie = loaded and loaded("Questie")
+	-- (Explore to reveal, on the look's tab, sets these while it's on: Only places you've found, the
+	-- unexplored areas' rows, and the minimap in the gaps, off)
+	local reveal = mod.ExploreReveal()
+	local function setBy(r)
+		if reveal then r.locked, r.note = true, L["Set by Explore to reveal"] end
+		return r
+	end
 	local rows = {
 		-- on the map
 		{ L["Places"], tab = "show" },
@@ -217,7 +225,8 @@ local function Rows()
 		optRow(L["Zeppelins"], "zeppelins", { atlas = "vehicle-air-horde", texture = "Interface\\Vehicles\\SeatIndicator\\Vehicle-HordeZeppelin", icon = true }),
 		optRow(L["Flight masters"], "flight", { atlas = faction == "Horde" and "TaxiNode_Horde" or "TaxiNode_Alliance",
 			texture = "Interface\\Icons\\Ability_Mount_Wyvern_01", icon = true }),
-		optRow(L["Only places you've found"], "foundOnly", Icon("INV_Misc_Spyglass_03")),
+		setBy(row(L["Only places you've found"], "foundOnly", Icon("INV_Misc_Spyglass_03"), mod.FoundOnly,
+			function(v) db.foundOnly = v mod:Refresh() end)),
 		optRow(L["Boat and zeppelin routes"], "routes", { atlas = "Ships_CargoShip-Map", texture = "Interface\\Icons\\INV_Misc_Spyglass_02", icon = true }),
 		optRow(L["Your arrow"], "playerArrow", { texture = "Interface\\Minimap\\MinimapArrow" }),
 		optRow(L["Party and raid members"], "group", Icon("Spell_Holy_PrayerOfFortitude")),
@@ -284,15 +293,18 @@ local function Rows()
 	-- (darkened or hidden; neither ticked: shown as they are. Darkened takes the colour-matched zones' land
 	-- masks, which retail's data has none of: hidden only, there)
 	rows[#rows + 1] = { L["Unexplored areas"], tab = "look" }
+	-- (only what this character has found, on the map and in the search: WorldMap.lua's mod.ExploreReveal)
+	rows[#rows + 1] = optRow(L["Explore to reveal"], "exploreReveal", Icon("INV_Misc_Spyglass_02"))
+	rows[#rows].note = L["Only what this character has found"]
 	for _, mode in ipairs({ { "dim", L["Darken unexplored areas"], "Spell_Shadow_Twilight" }, { "hide", L["Hide unexplored areas"], "Ability_Vanish" } }) do
 		if mode[1] ~= "dim" or ns.MapGrade then   -- (darkening needs its zones' land masks: not retail's)
-			rows[#rows + 1] = row(mode[2], "unexplored." .. mode[1], Icon(mode[3]), function() return mod.Unexplored() == mode[1] end,
-				function(v) mod.SetUnexplored(v and mode[1] or "show") end)
+			rows[#rows + 1] = setBy(row(mode[2], "unexplored." .. mode[1], Icon(mode[3]), function() return mod.Unexplored() == mode[1] end,
+				function(v) mod.SetUnexplored(v and mode[1] or "show") end))
 		end
 	end
 	-- (this character's own choice of the two, or every character's)
-	rows[#rows + 1] = row(L["Only for this character"], "unexploredOwn", Icon("INV_Misc_Head_Human_01"),
-		function() return mod.char and mod.char.unexploredOwn or false end, function(v) mod.SetUnexploredOwn(v) end)
+	rows[#rows + 1] = setBy(row(L["Only for this character"], "unexploredOwn", Icon("INV_Misc_Head_Human_01"),
+		function() return mod.char and mod.char.unexploredOwn or false end, function(v) mod.SetUnexploredOwn(v) end))
 	rows[#rows + 1] = { L["The map"] }
 	if ns.MapChart then                          -- (the sea chart is WoW Forever's: Data\Forever\Chart.lua)
 		rows[#rows + 1] = optRow(L["Responsive ocean & border"], "chart", Icon("INV_Misc_Map02"))
@@ -330,7 +342,8 @@ local function Rows()
 	rows[#rows + 1] = optRow(L["Minimap detail"], "minimap", Icon("Spell_Nature_FarSight"))
 	rows[#rows + 1] = optRow(L["Minimap detail in major cities"], "cityMinimap", Icon("Spell_Arcane_TeleportStormWind"))
 	if ns.MapGaps then                           -- (a client with gaps between its zones)
-		rows[#rows + 1] = optRow(L["Minimap in the gaps"], "gapMinimap", Icon("INV_Misc_Map_01"))
+		rows[#rows + 1] = setBy(row(L["Minimap in the gaps"], "gapMinimap", Icon("INV_Misc_Map_01"),
+			function() return db.gapMinimap and not reveal end, function(v) db.gapMinimap = v mod:Refresh() end))
 	end
 	rows[#rows + 1] = optRow(L["Soften and paper grain"], "soften", Icon("INV_Fabric_Linen_01"))
 	rows[#rows + 1] = optRow(L["Caves underground"], "underground", Icon("Trade_Mining"))
@@ -566,7 +579,7 @@ local function FavClick(self, button)
 		return
 	elseif self.entry.run then
 		self.entry.run(button)
-	else
+	elseif not self.entry.locked then           -- (one another setting sets for now: left as it is)
 		self.entry[3](not self.entry[2]())
 	end
 	RefreshFavorites()
@@ -578,7 +591,8 @@ local function FavEnter(self)
 	local state = State(e2)
 	local off = L["Shift-right-click: take it off the map"]
 	Tip(self, self.tipAnchor or "ANCHOR_TOP", e2[1],
-		e2.run and { e2.tip } or { state == "on" and L["On: click to turn it off"] or L["Off: click to turn it on"] },
+		e2.run and { e2.tip } or e2.locked and { e2.note }
+			or { state == "on" and L["On: click to turn it off"] or L["Off: click to turn it on"] },
 		{ off .. " " .. L["(the stars in the OpenMap menu put buttons here)"], 0.6, 0.6, 0.6 })
 end
 
@@ -1024,6 +1038,12 @@ Fill = function()
 				it.note:SetText(row.note or "")
 				it.note:SetShown(row.note ~= nil)
 				it:SetChecked(row[2]() and true or false)
+				-- (a row another setting sets for now: shown as it is, greyed, its box and line not to be clicked)
+				local locked = row.locked and true or false
+				it:SetEnabled(not locked)
+				it.hit:SetEnabled(not locked)
+				it.icon:SetAlpha(locked and 0.5 or 1)
+				it.label:SetAlpha(locked and 0.5 or 1)
 				local lineH = math.max(ROW_H, math.ceil(it.label:GetStringHeight() or ROW_H) + 5)
 				local noteH = row.note and math.max(NOTE_H, math.ceil(it.note:GetStringHeight() or NOTE_H) + 2) or 0
 				it.hit:SetWidth(COL - 44)

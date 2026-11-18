@@ -606,7 +606,8 @@ local function Look()
 	local db = mod.db
 	S.SetPlayerHidden(db.playerArrow == false)
 	S.SetPlacesFrom(db.iconsFrom)
-	S.SetFoundOnly(db.foundOnly)
+	S.SetFoundOnly(mod.FoundOnly())
+	S.SetExploreReveal(mod.ExploreReveal())
 	S.SetIconScale(db.iconScale or 1)
 	S.SetGapFillsShown(db.gapFills ~= false)
 	if S.SetDarkening then S.SetDarkening(db.darkening or 1, db.darkenColor or nil) end

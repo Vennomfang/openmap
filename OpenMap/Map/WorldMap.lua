@@ -39,6 +39,8 @@ local mod = ns:NewModule("worldmap", {
 		colorMatch = 1,         -- how far zone borders move to the shared palette
 		desaturate = 0.1,
 		unexplored = "show",    -- areas not explored yet: "show", "dim" or "hide"
+		exploreReveal = false,  -- Explore to reveal: only what this character has found (mod.ExploreReveal); it
+		                        --  hides the unexplored areas and keeps the places to those found, whatever those two say
 		gapFills = true,        -- the gaps between zones painted by hand (art/drawn/gaps)
 		maxZoom = 48 * (ns.ClientMaps and ns.ClientMaps.zoom or 1),   -- x the whole-world view (MAX_ZOOM: what it can
 		                        --  be set to; a world of smaller zones goes as much further: Data\<client>\Client.lua)
@@ -1493,6 +1495,7 @@ function mod.IsStitched() return active end
 -- Unexplored areas: every character's (the account's setting), or this character's own once it has one
 -- (Unexplored areas for this character, the menu's: mod.char.unexploredOwn)
 function mod.Unexplored()
+	if mod.ExploreReveal() then return "hide" end   -- (Explore to reveal: hidden, as the game's own map has them)
 	local c = mod.char
 	if c and c.unexploredOwn and c.unexplored then return c.unexplored end
 	return mod.db.unexplored
@@ -1509,6 +1512,16 @@ function mod.SetUnexploredOwn(on)
 	c.unexploredOwn = on and true or nil
 	mod:Refresh()
 end
+-- Explore to reveal (Options', the menu's Unexplored areas; off unless chosen): the map shows only what
+-- this character has found, as the game's own map does. It stands in for the two settings that did part
+-- of it, whatever they're set to (theirs are kept, and count again once it's off): the unexplored areas
+-- hidden (mod.Unexplored) and only the places you've found (mod.FoundOnly). And it closes what those
+-- leave open: townsfolk where you haven't explored (Townsfolk.lua), boats' and zeppelins' routes with
+-- neither dock found (Routes.lua), flight routes through flight masters you haven't learned
+-- (Flights.lua), the search finding a dungeon or a flight master you haven't (Nav.lua), the painted gaps
+-- (Stitch.lua's places.Fills), the minimap in the gaps and the zoom going on over a hidden cave (Close.lua)
+function mod.ExploreReveal() return mod.db and mod.db.exploreReveal and true or false end
+function mod.FoundOnly() return mod.db and (mod.db.foundOnly or mod.db.exploreReveal) and true or false end
 -- a zoom of the user's under way (the wheel's, a click's glide, the gamepad's stick): for Extras.lua's
 -- icons resting while the map zooms (not a view put back, a map switch or the window laid out again)
 function mod.Zooming() return anim ~= nil or GetTime() - (mod.padZoomAt or -10) < 0.2 end
@@ -1736,7 +1749,8 @@ function mod:Refresh()
 	S.SetPlayerHidden(self.db.playerArrow == false)
 	if active and map:IsShown() then RaisePlayer() end
 	S.SetPlacesFrom(self.db.iconsFrom)
-	S.SetFoundOnly(self.db.foundOnly)
+	S.SetFoundOnly(mod.FoundOnly())
+	S.SetExploreReveal(mod.ExploreReveal())
 	if self.RefreshFlightsFound then self.RefreshFlightsFound() end
 	S.SetIconScale(self.db.iconScale or 1)
 	S.SetGapFillsShown(self.db.gapFills ~= false)       -- (before the grade: it decides on the baked tiles)
@@ -1886,7 +1900,11 @@ function mod:Options()
 			desc = ns.L["Zoomed right out, the world map lies on an ocean that fills the window, in a border: the sea, compass roses, sea creatures, ships and the frame round it painted by Santiago Reyes (used with his permission), laid out for the window's shape, wide or tall. The game's own map stays in the middle. Off: no border."] },
 		gapFills = { type = "toggle", name = ns.L["Filled gaps"], order = 23.5, get = get, set = set, disabled = off,
 			desc = ns.L["Land no zone map covers, painted by hand in the zone maps' style from Blizzard's own art (by Santiago Reyes, used with his permission). Off: blank map paper there."] },
-		unexplored = { type = "select", name = ns.L["Unexplored areas"], order = 23, disabled = off,
+		exploreReveal = { type = "toggle", name = ns.L["Explore to reveal"], order = 22.9, width = "full", get = get, set = set, disabled = off,
+			desc = ns.L["The map shows only what this character has found, as the game's own map does: unexplored areas are hidden, dungeons, boats, zeppelins and townsfolk show once you've explored where they are, flight masters once you've learned them, and the search finds only those. While it's on, it sets Unexplored areas and Only places you've found."] },
+		-- (set by Explore to reveal while that's on: greyed, showing what it sets)
+		unexplored = { type = "select", name = ns.L["Unexplored areas"], order = 23,
+			disabled = function() return off() or mod.ExploreReveal() end,
 			get = function() return mod.Unexplored() end, set = function(_, v) mod.SetUnexplored(v) end,
 			values = { show = ns.L["Show"], dim = ns.L["Darken"], hide = ns.L["Hide"] }, sorting = { "show", "dim", "hide" },
 			desc = ns.L["Areas you haven't explored yet: shown as they are, darkened and cooled (and a zone you haven't found at all darkened from every zoom, the continents' too), or hidden like Blizzard's own map (blank parchment until you get there)."] },
@@ -1918,7 +1936,8 @@ function mod:Options()
 			desc = ns.L["Zeppelin towers (click one: the other end), and zeppelins' routes when routes are shown."] },
 		flight = { type = "toggle", name = ns.L["Flight masters"], order = 32, get = get, set = set,
 			disabled = off },
-		foundOnly = { type = "toggle", name = ns.L["Only places you've found"], order = 32.5, get = get, set = set, disabled = off,
+		foundOnly = { type = "toggle", name = ns.L["Only places you've found"], order = 32.5, set = set,
+			get = function() return mod.FoundOnly() end, disabled = function() return off() or mod.ExploreReveal() end,
 			desc = ns.L["Dungeons, boats and zeppelins only once you've explored where they are, and flight masters only once you've learned them."] },
 		iconsFrom = { type = "range", name = ns.L["Icons from zoom"], order = 33.5, min = ICONS_FROM[1], max = ICONS_FROM[2], step = ICONS_FROM[3],
 			get = get, set = set, disabled = off,

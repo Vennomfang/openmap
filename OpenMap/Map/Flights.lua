@@ -26,6 +26,7 @@ local edges = {}                -- node id -> { { to, path }, ... }
 local pins = {}                 -- node id -> pin
 local set, routeSet
 local selected                  -- the first node clicked
+local routeUnlearned            -- the route drawn goes by flight masters you haven't learned
 local factionBit
 
 --------------------------------------------------------------------------------
@@ -79,9 +80,11 @@ local SIZE_KNOWN, SIZE_NOT = 22, 18
 
 local function RefreshLook()
 	ReadFound()
+	-- (Explore to reveal turned on: a route begun at, or drawn through, one you haven't learned goes with it)
+	if mod.ExploreReveal() and (routeUnlearned or (selected and not Known(selected))) then mod:ClearFlightRoute() end
 	for id, pin in pairs(pins) do
 		local known = Known(id)
-		pin:SetShown(known or not mod.db.foundOnly)   -- (Only places you've found: learned ones only)
+		pin:SetShown(known or not mod.FoundOnly())   -- (Only places you've found, Explore to reveal: learned ones only)
 		pin.Icon:SetDesaturated(not known)
 		pin.Icon:SetAlpha(known and 1 or 0.9)
 		if pin.shadow then pin.shadow:SetAlpha(known and 0.8 or 0.65) end
@@ -203,13 +206,20 @@ local label                     -- the route's caption (a pin with no icon)
 local function ClearRoute()
 	if routeSet then S.ClearPinSet(routeSet) end
 	if selected and pins[selected] then pins[selected].ring:Hide() end
-	selected = nil
+	selected, routeUnlearned = nil, nil
+end
+
+-- a route by learned flight masters, else by any: not with Explore to reveal, where one you haven't
+-- learned isn't shown, nor the way through it
+local function RouteFor(from, to)
+	local legs = Route(from, to, true)
+	if legs or mod.ExploreReveal() then return legs, true end
+	return Route(from, to, false), false
 end
 
 local function ShowRoute(from, to)
 	S.ClearPinSet(routeSet)
-	local legs, knownOnly = Route(from, to, true), true
-	if not legs then legs, knownOnly = Route(from, to, false), false end
+	local legs, knownOnly = RouteFor(from, to)
 	if not legs then
 		ns:Print(ns.L["No flight route from %s to %s."], F.nodes[from][1], F.nodes[to][1])
 		return
@@ -217,6 +227,7 @@ local function ShowRoute(from, to)
 	-- (the learned-only search lets the ends through unlearned, to keep to learned stops between
 	-- them: a route that starts or ends at one you haven't learned still needs it)
 	knownOnly = knownOnly and Known(from) and Known(to) and true or false
+	routeUnlearned = not knownOnly
 	local total, measured, cont = 0, true, F.nodes[from][2]
 	local r, g, b = unpack(ROUTE_COLOR)
 	local alpha = knownOnly and 0.95 or 0.5
@@ -277,7 +288,7 @@ local function NodeEnter(pin)
 	GameTooltip:AddLine(n[1], 1, 0.82, 0)
 	GameTooltip:AddLine(Known(pin.node) and ns.L["Learned"] or ns.L["Not learned"], 0.8, 0.8, 0.8)
 	if selected and selected ~= pin.node then
-		local legs = Route(selected, pin.node, true) or Route(selected, pin.node, false)
+		local legs = RouteFor(selected, pin.node)
 		if legs then
 			local total = 0
 			for _, path in ipairs(legs) do total = total + LegTime(path) end
@@ -347,6 +358,8 @@ function mod:ForgetFlights()
 	ns:Print(ns.L["Learned flight paths forgotten for this character: talk to a flight master to learn the ones you have again."])
 end
 function mod.RefreshFlightsFound() if set then RefreshLook() end end
+-- whether this character has learned a flight master (Nav.lua's search, with Explore to reveal)
+function mod.FlightKnown(id) return Known(id) end
 
 -- /openmap status: why flight masters might not show (#216)
 function mod.FlightStatus()
@@ -360,7 +373,7 @@ function mod.FlightStatus()
 	return ("Flight masters: %s; %d in the data, %d placed for %s, %d learned, %d of them shown (Only places you've found %s)."):format(
 		mod.db.flight == false and "turned off" or "on", data, placed,
 		factionBit == 2 and "the Horde" or factionBit == 1 and "the Alliance" or "nobody yet (the map isn't built)",
-		known, shown, mod.db.foundOnly and "on" or "off")
+		known, shown, mod.FoundOnly() and "on" or "off")
 end
 
 function mod:SetupFlights()

@@ -547,5 +547,9 @@
  "Dungeon maps inside dungeons": "地城內顯示地城地圖",
  "Opening the map inside a dungeon or raid shows that dungeon's map. Off: the map opens there as the game's own would, and a dungeon's map still opens from its entrance on the world map. With Dungeon Journal installed, its map is left to it inside a dungeon it has a page for.": "在地城或團隊副本內打開地圖時顯示該地城的地圖。關閉：在那裡地圖像遊戲內建的一樣打開，地城的地圖仍可從世界地圖上的入口打開。安裝了 Dungeon Journal 時，在它有頁面的地城內，地圖交給它顯示。",
  "Zoomed in, the painted map runs out of pixels: this softens it and lays paper grain over it. The softening rests while the map moves, so the map is sharp while you zoom or pan and softens a moment after it stops. Off (the default): always sharp.": "放大後，手繪地圖的像素不夠用：此選項會柔化地圖並疊上紙張紋理。地圖移動時柔化會暫停，所以縮放或拖曳時地圖是清晰的，停下片刻後才變柔和。關閉（預設）：始終清晰。",
- "Opening the map in a dungeon shows OpenMap's map of it. To turn that off: OpenMap's menu > Dungeons > Dungeon maps inside dungeons.": "在地城中打開地圖會顯示 OpenMap 的地城地圖。關閉方法：OpenMap 選單 > 地城 > 地城內顯示地城地圖。"
+ "Opening the map in a dungeon shows OpenMap's map of it. To turn that off: OpenMap's menu > Dungeons > Dungeon maps inside dungeons.": "在地城中打開地圖會顯示 OpenMap 的地城地圖。關閉方法：OpenMap 選單 > 地城 > 地城內顯示地城地圖。",
+ "Explore to reveal": "探索後顯示",
+ "The map shows only what this character has found, as the game's own map does: unexplored areas are hidden, dungeons, boats, zeppelins and townsfolk show once you've explored where they are, flight masters once you've learned them, and the search finds only those. While it's on, it sets Unexplored areas and Only places you've found.": "地圖只顯示此角色已發現的內容，與遊戲原本的地圖一樣：未探索區域會隱藏，地城、船隻、飛艇和村民在你探索過其所在區域後顯示，飛行管理員在你發現後顯示，搜尋也只找得到這些。開啟時，「未探索區域」和「僅顯示已發現的地點」由它決定。",
+ "Only what this character has found": "只顯示此角色已發現的內容",
+ "Set by Explore to reveal": "由「探索後顯示」決定"
 }

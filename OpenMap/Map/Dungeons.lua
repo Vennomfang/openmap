@@ -1465,6 +1465,15 @@ local function Recolour()
 	for _, pin in ipairs(entrancePins) do if pin.instances then Label(pin) end end
 end
 
+-- Explore to reveal: whether an entrance (its line in Places.lua) has been found, as its icon has
+-- (Stitch.lua's S.RefreshFound keeps `found` while only the places found are shown): Nav.lua's search
+function mod.EntranceFound(g)
+	for _, pin in ipairs(entrancePins) do
+		if pin.instances == g[4] then return pin.found and true or false end
+	end
+	return false
+end
+
 --------------------------------------------------------------------------------
 -- Questie's quests for each dungeon (its zoneOrSort: the dungeon's area), read once
 --------------------------------------------------------------------------------

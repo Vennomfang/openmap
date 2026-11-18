@@ -1569,6 +1569,8 @@ function S.BuildNow(parent, artLevel, range, iconLevel)
 			for _, tex in ipairs(texs) do S.QueueLoad(tex) end   -- (the loader: faded in, the baked tiles held till then)
 		end)
 		culled[#culled + 1] = { f, r[1], r[2], r[3], r[4] }
+		S.fills = S.fills or {}             -- (Explore to reveal: one not found yet is put away, places.Fills)
+		S.fills[#S.fills + 1] = culled[#culled]
 	end
 
 	-- a zone's name banner for a city (ns.MapBanners, tools/map-preview/banners.py), cut from
@@ -3060,7 +3062,8 @@ function S.Cull(u0, v0, u1, v1)
 					r:ClearAllPoints()
 				end
 			end
-			r:SetShown(here and (not c.city or (r:GetAlpha() or 1) > 0.003))   -- (a city: while it's faded in, SetZoom)
+			-- (a city: while it's faded in, SetZoom; a painted gap: not one still to be found, places.Fills)
+			r:SetShown(here and not c.lost and (not c.city or (r:GetAlpha() or 1) > 0.003))
 			-- (a culled backdrop tile: its file once it's near the view and its layer shows)
 			if here and r.omFile and (not c.layer or c.layer:IsShown()) then S.QueueLoad(r) end
 		end
@@ -3368,6 +3371,7 @@ function S.RefreshCities()
 	if cities.Refresh() then
 		Shade.Places.Refresh()
 		if lastGrade then S.ApplyGrade(unpack(lastGrade)) end
+		if places.explore then S.RefreshFound() end   -- (Explore to reveal: what's in the city found with it)
 	end
 end
 
@@ -3388,7 +3392,8 @@ function S.RefreshExplored()
 	if cities.Refresh() then changed = true end
 	if changed then Shade.Places.Refresh() end
 	if changed and lastGrade then S.ApplyGrade(unpack(lastGrade)) end
-	if changed then S.RefreshFound() end
+	-- (Explore to reveal: looked at again whatever the pieces say, an area with no piece of its own explored)
+	if changed or places.explore then S.RefreshFound() end
 end
 
 -- Only places you've found (the menu's): a dungeon's entrance, a dock or a zeppelin tower shown once
@@ -3435,4 +3440,96 @@ function S.RefreshFound()
 			end
 		end
 	end
+	if places.explore then places.Reveal() end
+end
+
+--------------------------------------------------------------------------------
+-- Explore to reveal (Options', the menu's; off unless chosen): the map shows only what this character
+-- has found, as the game's own map does. WorldMap.lua has the unexplored areas hidden for it
+-- (S.ApplyGrade's "hide") and the places kept to those found (S.SetFoundOnly); this is what those two
+-- leave showing. The gaps painted by hand (ns.MapGapFills): land no zone map covers, so nothing the game
+-- marks as explored; each stays the gaps' blank paper (as with Filled gaps off) until a zone map's piece
+-- that reaches into its box is explored, the land beside it. The townsfolk (Townsfolk.lua) and the boats'
+-- and zeppelins' routes (Routes.lua) ask S.FoundIn and S.Found. Off, none of it runs.
+-- (On `places` and `Shade`: the file is at Lua's limit of 200 locals)
+--------------------------------------------------------------------------------
+
+-- the zone maps' pieces whose rectangle reaches into each of `boxes` ({ l, t, r, b } on the world,
+-- normalized): a list of them for each box (Shade.Found: found once one is explored, or with none there)
+function Shade.Over(boxes)
+	local out = {}
+	for i = 1, #boxes do out[i] = {} end
+	for zoneID, list in pairs(pieces) do
+		local p = Place(zoneID)
+		for key, piece in pairs(p and list or NONE) do
+			local w, h, x, y = strsplit(":", key)
+			w, h, x, y = tonumber(w), tonumber(h), tonumber(x), tonumber(y)
+			if w then
+				local x0, y0 = (p.left + x * p.sx) / W, (p.top + y * p.sy) / H
+				local x1, y1 = (p.left + (x + w) * p.sx) / W, (p.top + (y + h) * p.sy) / H
+				for i, b in ipairs(boxes) do
+					if x1 > b[1] and x0 < b[3] and y1 > b[2] and y0 < b[4] then out[i][#out[i] + 1] = piece end
+				end
+			end
+		end
+	end
+	return out
+end
+
+-- the painted gaps (S.fills: S.Cull's own records of them, { frame, l, t, r, b }) lost or found for the
+-- option now: a lost one is hidden wherever the view is (S.Cull leaves it so). The pieces over each are
+-- looked up once, the first time the option is on with it there
+function places.Fills()
+	local fills = S.fills or NONE
+	if places.explore then
+		local boxes, need = {}, {}
+		for _, c in ipairs(fills) do
+			if not c.covers then need[#need + 1], boxes[#boxes + 1] = c, { c[2], c[3], c[4], c[5] } end
+		end
+		for i, covers in ipairs(need[1] and Shade.Over(boxes) or NONE) do need[i].covers = covers end
+	end
+	for _, c in ipairs(fills) do
+		local lost = places.explore and not Shade.Found(c.covers) or false
+		if (c.lost or false) ~= lost then
+			c.lost = lost
+			if c.here ~= nil then c[1]:SetShown(c.here and not lost) end
+		end
+	end
+end
+
+-- whether the ground at a place on a zone's map (x, y: 0..1 of it) has been explored, as the game has it:
+-- the townsfolk's, whose zone is known (one lookup, where places.Found tries round a point on the
+-- world). On a city's map: found as the city is; a zone with no pieces to explore, or where the game
+-- can't say: always
+function S.FoundIn(mapID, x, y)
+	for _, c in ipairs(cities) do
+		if c.mapID == mapID then return not (c.piece and c.piece.unexplored) end
+	end
+	local list = pieces[mapID]
+	if not list or next(list) == nil then return true end
+	local at = C_MapExplorationInfo and C_MapExplorationInfo.GetExploredAreaIDsAtPosition
+	if not at then return true end
+	local ok, areas = pcall(at, mapID, CreateVector2D(x, y))
+	if not ok then return true end
+	return type(areas) == "table" and #areas > 0
+end
+
+-- ... and at a point on the world (normalized), as the places' icons are found (Routes.lua: a route's ends)
+function S.Found(u, v)
+	return places.Found(u, v)
+end
+
+-- what else the option keeps to what's found, looked at again: after the icons (S.RefreshFound), and as
+-- the option is turned on or off
+function places.Reveal()
+	places.Fills()
+	if S.RefreshFolk then S.RefreshFolk(true) end      -- (Townsfolk.lua)
+	if S.RefreshRoutes then S.RefreshRoutes(true) end  -- (Routes.lua)
+end
+
+function S.SetExploreReveal(on)
+	on = on and true or false
+	if (places.explore or false) == on then return end
+	places.explore = on
+	places.Reveal()
 end

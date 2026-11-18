@@ -164,6 +164,24 @@ explored, such as the Wetlands' Excavation Site; their ground from the game's te
 the gaps' blank paper on Hide, the undiscovered shade on Darken, over the painting and the minimap
 (`Shade.Places`).
 
+**Explore to reveal** (`exploreReveal`, off unless chosen: WorldMap.lua's `mod.ExploreReveal`): the map
+shows only what the character has found, as the game's own map does. It stands in for the two settings
+that did part of it, whatever they're set to (theirs are kept, and count again once it's off):
+`mod.Unexplored()` answers "hide" (the unexplored areas above) and `mod.FoundOnly()` true ("Only places
+you've found": a dungeon's entrance, a dock or a zeppelin tower once the game says the ground there is
+explored, `C_MapExplorationInfo.GetExploredAreaIDsAtPosition`, or the dungeon has been entered; a flight
+master once learned). And it closes what those two leave showing: the gaps painted by hand, which no
+zone map covers and the game marks no one as having explored (each the gaps' blank paper until a zone
+map's piece that reaches into its box is explored: `places.Fills`, `Shade.Over`); townsfolk where the
+ground isn't explored (`S.FoundIn`, a pin as it's made and a few hundred a frame after that:
+Townsfolk.lua's `S.RefreshFolk`); a boat's or zeppelin's route with neither dock found (Routes.lua); a
+flight route through flight masters not learned (Flights.lua); the search finding a dungeon or a flight
+master not found (Nav.lua's `Revealed`); the minimap in the gaps; and the zoom going on over a cave
+under hidden land (Close.lua). `S.SetExploreReveal` tells Stitch.lua, and `S.RefreshFound` (the map
+built, somewhere explored, a city or a dungeon entered) looks at all of it again (`places.Reveal`). Off,
+none of it runs. Not held back: other addons' icons, your own pins and drawings, zone names and levels
+(the game's own map names every zone), and a dungeon's map opened from an entrance that's found.
+
 Border colours are matched by a tinted copy of each zone drawn through its border-band
 mask (`MapBand`) with the multipliers in `Data/Grade.lua`. Everything is placed once, in
 world units on one root frame; `Layout(mapID)` only sets that frame's scale and corner for

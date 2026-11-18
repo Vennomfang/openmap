@@ -106,6 +106,55 @@ local function Middle(coords)
 	return { best }
 end
 
+-- Explore to reveal (mod.ExploreReveal): a pin shows only where you've explored, as the game has it at the
+-- pin's place on its zone's map (S.FoundIn; in a city: once the city's found). A pin is looked up as
+-- it's made; all of them again, FOUND_STEP a frame from the next, when the option is switched or you've
+-- explored somewhere (S.RefreshFolk, from Stitch.lua's places.Reveal), and a kind's as it's turned on.
+-- One found stays found. With the option never on, nothing here runs.
+-- stamp: goes up each time what's found may have changed (0: the option hasn't been on); a pin's `seen`
+-- is the stamp it was last looked up at. pass: the pass over the pins under way (a newer one ends it)
+local FOUND_STEP = 300
+local reveal = { stamp = 0, pass = 0, on = false }
+
+local function RevealPin(pin)
+	pin.seen = reveal.stamp
+	if not reveal.on then pin:Show() return end
+	if not pin.found then pin.found = S.FoundIn(pin.zone, pin.zx, pin.zy) and true or false end
+	pin:SetShown(pin.found)
+end
+
+function S.RefreshFolk(changed)
+	local on = mod.ExploreReveal()
+	if on ~= reveal.on then reveal.on, changed = on, true end
+	if reveal.stamp == 0 and not on then return end
+	if changed then reveal.stamp = reveal.stamp + 1 end
+	reveal.pass = reveal.pass + 1
+	local pass, lists = reveal.pass, {}
+	for _, k in ipairs(mod.TOWNSFOLK) do
+		local set = S.GetPinSet("tf_" .. k.key)
+		if set and set.on then lists[#lists + 1] = set.pins end   -- (a kind turned off: when it's turned on)
+	end
+	local li, pi = 1, 0
+	local function Step()
+		if pass ~= reveal.pass then return end
+		local n = 0
+		while lists[li] do
+			local pins = lists[li]
+			while pi < #pins do
+				pi = pi + 1
+				local pin = pins[pi]
+				if pin.zone and pin.seen ~= reveal.stamp then
+					RevealPin(pin)
+					n = n + 1
+					if n >= FOUND_STEP then C_Timer.After(0, Step) return end
+				end
+			end
+			li, pi = li + 1, 0
+		end
+	end
+	C_Timer.After(0, Step)          -- (from the next frame: asked several times in one, the last pass is the one that runs)
+end
+
 local function PinEnter(pin)
 	local n = pin.data
 	GameTooltip:SetOwner(pin, "ANCHOR_RIGHT")
@@ -154,6 +203,9 @@ local function Build(kinds, done)
 						local pin = S.AddPin(set, l + c[1] / 100 * (r - l), t + c[2] / 100 * (b - t), k.look, info)
 						pin:SetScript("OnEnter", PinEnter)
 						pin:SetScript("OnLeave", GameTooltip_Hide)
+						-- (where it is on its zone's map, for Explore to reveal; a pin is pooled: not the last one's)
+						pin.zone, pin.zx, pin.zy, pin.found, pin.seen = uiMapID, c[1] / 100, c[2] / 100, nil, nil
+						if reveal.on then RevealPin(pin) end
 					end
 				end
 			end
@@ -263,6 +315,7 @@ function mod:RefreshTownsfolk()
 		local set = S.GetPinSet("tf_" .. k.key)
 		if set then S.SetPinSetOn(set, on) end
 	end
+	S.RefreshFolk()                 -- (Explore to reveal: a kind just turned on, its pins where you've explored)
 	if #todo == 0 or building then return end
 	-- no Questie at all (not just its database still loading): nothing to wait for
 	if not mod.HasTownsfolk() then

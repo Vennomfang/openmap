@@ -288,6 +288,9 @@ local places                    -- { name, lower, kind, u0, v0, u1, v1 } or a po
 local box, list
 local MAX_RESULTS = 8
 
+-- (a dungeon or a flight master also has `spots`: each entrance or flight master of that name, { u, v,
+-- entrance = its line in Places.lua } or { u, v, node = its id }, the first of them the place's own point.
+-- Explore to reveal finds it by the ones you've found: Revealed)
 local function Places()
 	if places then return places end
 	places = {}
@@ -295,9 +298,16 @@ local function Places()
 	local function add(name, kind, u0, v0, u1, v1)
 		if not name or name == "" or not u0 then return end
 		local key = kind .. name
-		if seen[key] then return end
-		seen[key] = true
-		places[#places + 1] = { name = name, lower = name:lower(), kind = kind, u0, v0, u1 or u0, v1 or v0 }
+		if seen[key] then return seen[key] end
+		local p = { name = name, lower = name:lower(), kind = kind, u0, v0, u1 or u0, v1 or v0 }
+		seen[key] = p
+		places[#places + 1] = p
+		return p
+	end
+	local function spot(p, u, v, key, what)
+		if not p then return end
+		p.spots = p.spots or {}
+		p.spots[#p.spots + 1] = { u, v, [key] = what }
 	end
 	for _, kind in ipairs({ Enum.UIMapType.Continent, Enum.UIMapType.Zone }) do
 		for _, info in ipairs(C_Map.GetMapChildrenInfo(S.WORLD, kind, true) or {}) do
@@ -309,14 +319,31 @@ local function Places()
 		local u, v
 		if S.EntranceAt then u, v = S.EntranceAt(g) else u, v = S.FromYards(g[1], g[2], g[3]) end   -- (Dungeons.lua)
 		if u then
-			for _, inst in ipairs(g[4]) do add(S.InstanceName(inst), inst[3] and L["Raid"] or L["Dungeon"], u, v) end
+			for _, inst in ipairs(g[4]) do spot(add(S.InstanceName(inst), inst[3] and L["Raid"] or L["Dungeon"], u, v), u, v, "entrance", g) end
 		end
 	end
-	for _, node in pairs((ns.MapFlights or {}).nodes or {}) do
+	for id, node in pairs((ns.MapFlights or {}).nodes or {}) do
 		local u, v = S.FromYards(node[2], node[3], node[4])
-		add(node[1], L["Flight master"], u, v)
+		spot(add(node[1], L["Flight master"], u, v), u, v, "node", id)
 	end
 	return places
+end
+
+-- Explore to reveal: the search finds a dungeon once you've found an entrance to it (as its icon is found:
+-- Dungeons.lua) and a flight master once you've learned it (Flights.lua), at that one's place where
+-- several share the name (each faction's Booty Bay); never one you haven't. Zones and continents always:
+-- the game's own map names them all. Off: every place, as it was
+local function Revealed(p)
+	if not p.spots or not mod.ExploreReveal() then return p end
+	for i, s in ipairs(p.spots) do
+		local found
+		if s.node then found = mod.FlightKnown and mod.FlightKnown(s.node)
+		else found = mod.EntranceFound and mod.EntranceFound(s.entrance) end
+		if found then
+			if i == 1 then return p end
+			return { name = p.name, lower = p.lower, kind = p.kind, s[1], s[2], s[1], s[2] }
+		end
+	end
 end
 
 -- a marker on what was found, for a few seconds
@@ -348,7 +375,8 @@ local function Results(text)
 	if #text < 2 then return out end
 	for _, p in ipairs(Places()) do
 		local at = p.lower:find(text, 1, true)
-		if at then out[#out + 1] = { p, at == 1 and 0 or 1 } end
+		local found = at and Revealed(p)
+		if found then out[#out + 1] = { found, at == 1 and 0 or 1 } end
 	end
 	table.sort(out, function(a, b)
 		if a[2] ~= b[2] then return a[2] < b[2] end

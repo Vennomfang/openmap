@@ -126,6 +126,26 @@ steps = L.eval("""function(ns, scenario)
         end
         db.windowSize, db.scrubTest, cdb.scrubTest = false, nil, nil
     end
+    -- Explore to reveal (Options', the menu's): off by default; on, the unexplored areas are hidden and the
+    -- places kept to those found, whatever those two settings say, and they're as they were once it's off
+    -- (reveal.py builds the map and looks at what shows)
+    do
+        local m = ns.modules.worldmap
+        if m.db.exploreReveal ~= false then ERRORS[#ERRORS + 1] = "Explore to reveal on by default" end
+        local okr, er = pcall(function()
+            local was, found = m.Unexplored(), m.db.foundOnly
+            m.db.exploreReveal = true
+            m:Refresh()
+            RunTimers(1)
+            assert(m.ExploreReveal() and m.Unexplored() == "hide" and m.FoundOnly(), "on: the unexplored areas aren't hidden, or not only the places found show")
+            assert(m.db.foundOnly == found, "on: Only places you've found itself was changed")
+            m.db.exploreReveal = false
+            m:Refresh()
+            RunTimers(1)
+            assert(not m.ExploreReveal() and m.Unexplored() == was and m.FoundOnly() == (found and true or false), "off: not as it was")
+        end)
+        if not okr then ERRORS[#ERRORS + 1] = "Explore to reveal: " .. tostring(er) end
+    end
     for _, cmd in ipairs({ "status", "paint", "news", "forgetflights" }) do
         local ok2, e2 = pcall(SlashCmdList.OPENMAP, cmd)
         if not ok2 then ERRORS[#ERRORS + 1] = "slash " .. cmd .. ": " .. tostring(e2) end

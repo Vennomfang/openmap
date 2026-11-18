@@ -24,6 +24,8 @@ class PlayerTests(unittest.TestCase):
             function mod:UpdateBrightness() end
             function mod:RefreshInstancePins() end
             function mod.Unexplored() return 'show' end
+            function mod.FoundOnly() return false end
+            function mod.ExploreReveal() return false end
             function InCombatLockdown() return combat end
             function hooksecurefunc(pin, key, callback)
                 local original = pin[key]

@@ -38,6 +38,18 @@ local function KindOn(route)
 	return not key or mod.db[key] ~= false
 end
 
+-- Explore to reveal: a route shows once you've found the dock at either end of it (its two ends, looked up
+-- as the docks' icons are: S.Found); until then it would be a line across the sea between two places you
+-- haven't found. Kept once looked up, until what's found may have changed (`again`: S.RefreshRoutes)
+local function Found(route, again)
+	if not mod.ExploreReveal() then return true end
+	if route.found == nil or (again and not route.found) then
+		local a, b = route.way[1], route.way[#route.way]
+		route.found = (S.Found(a[1], a[2]) or S.Found(b[1], b[2])) and true or false
+	end
+	return route.found
+end
+
 local function Smooth(x, r)
 	local t = math.max(0, math.min(1, (x - r[1]) / (r[2] - r[1])))
 	return t * t * (3 - 2 * t)
@@ -151,7 +163,7 @@ local function Build(set)
 				ends[#ends + 1] = info and info.name or "?"
 			end
 			route.ends = ends
-			route.frame:SetShown(KindOn(route))
+			route.frame:SetShown(KindOn(route) and Found(route))
 			routes[#routes + 1] = route
 		end
 	end
@@ -259,10 +271,11 @@ function S.BuildRoutes()
 	end
 end
 
--- the boats' and zeppelins' switches (mod:Refresh)
-function S.RefreshRoutes()
+-- the boats' and zeppelins' switches (mod:Refresh); `again`: what's found may have changed (Stitch.lua's
+-- places.Reveal)
+function S.RefreshRoutes(again)
 	for _, route in ipairs(routes) do
-		local on = KindOn(route)
+		local on = KindOn(route) and Found(route, again)
 		route.frame:SetShown(on)
 		if not on and route == lit then Light(nil) end
 	end

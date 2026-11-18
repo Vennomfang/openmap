@@ -31,6 +31,8 @@ class NavigationTests(unittest.TestCase):
                 end,
             }
             function mod.ToWorld(_, x, y) return x, y end
+            function mod.FoundOnly() return (mod.db.foundOnly or mod.db.exploreReveal) and true or false end
+            function mod.ExploreReveal() return mod.db.exploreReveal and true or false end
             function mod.ViewNow() return .5, .5, 4 end
             function mod.HostMap() return 1 end
             function mod.ViewHalfExtents() return .1, .05 end
