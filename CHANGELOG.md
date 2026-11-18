@@ -1,5 +1,20 @@
 # OpenMap changelog
 
+## Unreleased
+
+### New
+
+- **Explore to reveal** (the menu's Look tab, under Unexplored areas, and Options; off unless turned
+  on): the map shows only what your character has found, as the game's own map does. Unexplored areas
+  are hidden, and dungeons, boats and zeppelins show once you've explored where they are, flight
+  masters once you've learned them. What those two settings left showing is kept back too: townsfolk
+  and rare mobs where you haven't explored, a boat's or zeppelin's route until you've found the dock at
+  one end of it, a flight route through flight masters you haven't learned, the gaps painted between
+  zones until you've explored land beside them, and the search, which finds a dungeon or a flight
+  master only once you have. While it's on, "Unexplored areas" and "Only places you've found" are set
+  by it, and are as you left them once it's off. Other addons' icons (Questie's) aren't held back, and
+  a dungeon's map still opens from an entrance you've found. By Vennomfang.
+
 ## v0.8.10 (2026-11-16)
 
 ### Fixed
