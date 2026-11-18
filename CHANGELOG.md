@@ -1,5 +1,13 @@
 # OpenMap changelog
 
+## Unreleased
+
+### Fixed
+
+- **ClassicUI Forever's question in other languages**: the popup that offers to turn off ClassicUI
+  Forever's World map option, and the line said when you keep it, showed garbled letters in every
+  language but English ("UnverÃ¤ndert" for "Unverändert"). Both read as written now.
+
 ## v0.8.10 (2026-11-16)
 
 ### Fixed
