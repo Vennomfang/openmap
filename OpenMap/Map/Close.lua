@@ -163,6 +163,7 @@ local LOD = ns.Media.tex .. "MapMiniLOD\\"
 local NATIVE_FROM = { 64, 36 }  -- tiles in view where the game's own tiles start / finish taking over
 local FINE_FROM = { 40, 24 }    -- tiles across the view where the finer copy starts / finishes taking over
 local lodPieces, lodPool, wantedLOD = {}, {}, {}   -- key -> texture; free textures; (reused each update)
+local EMPTY_LODS = {}
 local lodSets = {}              -- (continent * 2 + level) -> { [col * 64 + row] = true }
 
 local function LODSet(cont, level, keys)
@@ -283,6 +284,230 @@ local function UpdateMinimap(layer, conts, u, v, hu, hv, mix)
 			lodPool[#lodPool + 1] = t
 		end
 	end
+end
+
+--------------------------------------------------------------------------------
+-- Explore to reveal (mod.ExploreReveal): the minimap only on land the character has explored, in the
+-- shape of what's explored. The game says what's explored as the map's pieces (the overlays), each a
+-- soft-edged painting of its area, so each of the minimap's pictures above (a tile, a piece of a smaller
+-- copy: a source) is drawn through the explored pieces' own art: a clip of it for every explored tile
+-- that reaches into it, the part of the picture over that tile, masked by the tile's art (its alpha is
+-- the area's shape, and its soft edge), by the zone's frame as its overlays are, and by the continent's
+-- land as every tile is. Land with no explored piece over it has no clip, so nothing of the minimap,
+-- whatever the zoom and whichever copy: unexplored areas, a zone never visited, the land between the
+-- zones. Where two explored pieces overlap, both draw it, a little stronger there (their soft edges, mostly).
+-- The usual tiles above aren't drawn meanwhile (UpdateMinimap with no strength), nor Stitch.lua's cover
+-- for them. A source's clips come in over FADE seconds, in STEPS, as the zones' art does (its file is
+-- still arriving when it's made: it popped in); hidden, not see-through, until the first step.
+-- Reveal.src: key -> { u0, v0, u1, v1 (its place), key, file, cont, sub, r, g, b, clips, born, a, stamp };
+-- masks: an explored tile (Stitch.lua's own table for it) -> { its mask, n = clips using it }; n: clips
+-- out, at most MOST (a view of half the world with all of it explored: the nearest pictures first)
+--------------------------------------------------------------------------------
+
+local Reveal = { src = {}, pool = {}, masks = {}, maskPool = {}, tiles = {}, wanted = {}, n = 0,
+	MOST = 800, FADE = 0.3, STEPS = 8 }
+
+-- a clip's three masks: the continent's land, the explored tile's art, its zone's frame
+function Reveal.Masks(tex, land, shape, edge)
+	local had = tex.omMasks or {}
+	tex.omMasks = had
+	for i, mask in ipairs({ land or false, shape or false, edge or false }) do
+		if had[i] ~= mask then
+			if had[i] then tex:RemoveMaskTexture(had[i]) end
+			if mask then tex:AddMaskTexture(mask) end
+			had[i] = mask
+		end
+	end
+end
+
+function Reveal.Mask(layer, tile)
+	local m = Reveal.masks[tile]
+	if not m then
+		m = tremove(Reveal.maskPool) or { layer:CreateMaskTexture() }
+		m[1]:SetTexture(tile[1], "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+		S.PlaceWorld(m[1], tile[2], tile[3], tile[6], tile[7])   -- (its whole file: a mask isn't cut, it's placed)
+		m.n = 0
+		Reveal.masks[tile] = m
+	end
+	m.n = m.n + 1
+	return m[1]
+end
+
+-- a source's clips put away (and their tiles' masks, once no clip uses one)
+function Reveal.Free(s)
+	Reveal.n = Reveal.n - #s.clips
+	for _, tex in ipairs(s.clips) do
+		tex:Hide()
+		tex:ClearAllPoints()
+		S.UnplaceWorld(tex)
+		local m = Reveal.masks[tex.omTile]
+		m.n = m.n - 1
+		if m.n <= 0 then
+			m[1]:ClearAllPoints()
+			S.UnplaceWorld(m[1])
+			Reveal.masks[tex.omTile] = nil
+			Reveal.maskPool[#Reveal.maskPool + 1] = m
+		end
+		tex.omTile = nil
+		Reveal.pool[#Reveal.pool + 1] = tex
+	end
+	wipe(s.clips)
+end
+
+-- a source's clips made: one for each explored tile that reaches into it
+function Reveal.Clip(layer, s)
+	local tiles = Reveal.tiles
+	wipe(tiles)
+	S.ExploredTiles(s[1], s[2], s[3], s[4], tiles)
+	local land = CONT_MAP[s.cont] and S.LandMask and S.LandMask(layer, CONT_MAP[s.cont])
+	local w, h = s[3] - s[1], s[4] - s[2]
+	for _, tile in ipairs(tiles) do
+		if Reveal.n >= Reveal.MOST then break end
+		local u0, v0 = math.max(s[1], tile[2]), math.max(s[2], tile[3])
+		local u1, v1 = math.min(s[3], tile[4]), math.min(s[4], tile[5])
+		if u1 > u0 and v1 > v0 then
+			local tex = tremove(Reveal.pool) or layer:CreateTexture(nil, "ARTWORK")
+			tex:SetDrawLayer("ARTWORK", s.sub)
+			tex:SetDesaturation(MINI_DESAT)
+			tex:SetTexture(s.file, nil, nil, "LINEAR")
+			tex:SetTexCoord((u0 - s[1]) / w, (u1 - s[1]) / w, (v0 - s[2]) / h, (v1 - s[2]) / h)
+			tex:SetVertexColor(s.r or 1, s.g or 1, s.b or 1)
+			Reveal.Masks(tex, land, Reveal.Mask(layer, tile), S.EdgeMask(layer, tile.zone))
+			tex.omTile = tile
+			S.PlaceWorld(tex, u0, v0, u1, v1)
+			tex:Hide()                  -- (shown by its fade: Reveal.Alpha)
+			s.clips[#s.clips + 1] = tex
+			Reveal.n = Reveal.n + 1
+		end
+	end
+	s.stamp, s.shown = S.ExploredStamp(), nil
+end
+
+-- a source's clips at its strength now, less while it comes in; true while it still is
+function Reveal.Alpha(s, now)
+	local t = (now - s.born) / Reveal.FADE
+	local k = t >= 1 and 1 or math.floor(math.max(0, t * t * (3 - 2 * t)) * Reveal.STEPS + 0.5) / Reveal.STEPS
+	local a = s.a * k
+	if s.shown ~= a then
+		s.shown = a
+		for _, tex in ipairs(s.clips) do
+			tex:SetAlpha(a)
+			tex:SetShown(a > 0.004)
+		end
+	end
+	return k < 1
+end
+
+-- a source wanted at strength `a`: made the first time (its place worked out then: `place`), its clips
+-- made again once more has been explored
+function Reveal.Want(layer, key, a, sub, cont, file, place, p1, p2, p3)
+	local s = Reveal.src[key]
+	if not s then
+		local u0, v0, u1, v1, tone = place(cont, p1, p2, p3)
+		if not u0 then return end
+		s = { math.min(u0, u1), math.min(v0, v1), math.max(u0, u1), math.max(v0, v1), key = key, cont = cont, sub = sub,
+			file = file or (LOD .. cont .. "_" .. p3 .. "_" .. p1 .. "_" .. p2), clips = {}, born = Reveal.now }
+		if tone then s.r, s.g, s.b = TileTone((u0 + u1) / 2, (v0 + v1) / 2) end
+		Reveal.src[key] = s
+		Reveal.Clip(layer, s)
+	elseif s.stamp ~= Reveal.stamp then
+		Reveal.Free(s)
+		Reveal.Clip(layer, s)
+	end
+	Reveal.wanted[key] = true
+	s.a = a
+	if Reveal.Alpha(s, Reveal.now) then Reveal.fading = true end
+end
+
+-- where a tile, and a piece of a smaller copy, lie on the world (as UpdateMinimap and ShowLOD place them)
+function Reveal.TilePlace(cont, tx, ty)
+	local u0, v0 = S.FromYards(cont, (32 - ty) * TILE, (32 - tx) * TILE)
+	local u1, v1 = S.FromYards(cont, (31 - ty) * TILE, (31 - tx) * TILE)
+	if u0 and u1 then return u0, v0, u1, v1, true end
+end
+function Reveal.LODPlace(cont, col, row, per)
+	local u0, v0 = S.FromYards(cont, (32 - row * per) * TILE, (32 - col * per) * TILE)
+	local u1, v1 = S.FromYards(cont, (32 - (row + 1) * per) * TILE, (32 - (col + 1) * per) * TILE)
+	if u0 and u1 then return u0, v0, u1, v1 end
+end
+
+-- the same pictures at the same strengths as UpdateMinimap would draw (keep the two in step), each
+-- through the explored pieces; `mix` 0 (the option off again): all put away
+function Reveal.Update(layer, conts, u, v, hu, hv, mix)
+	local last = Reveal.last or {}
+	Reveal.last = last
+	last[1], last[2], last[3], last[4], last[5], last[6], last[7] = layer, conts, u, v, hu, hv, mix
+	local wanted = Reveal.wanted
+	wipe(wanted)
+	Reveal.now, Reveal.stamp, Reveal.fading = GetTime(), S.ExploredStamp(), false
+	for _, cont in ipairs(conts) do
+		local list = ns.MapMinimap and ns.MapMinimap[cont]
+		local xa, ya, xb, yb
+		if list and mix > 0.01 then
+			xa, ya = S.ToYards(cont, u - hu, v - hv)
+			xb, yb = S.ToYards(cont, u + hu, v + hv)
+		end
+		if xa and xb then
+			local tx0, tx1 = math.floor(32 - math.max(ya, yb) / TILE), math.floor(32 - math.min(ya, yb) / TILE)
+			local ty0, ty1 = math.floor(32 - math.max(xa, xb) / TILE), math.floor(32 - math.min(xa, xb) / TILE)
+			local count, across = (tx1 - tx0 + 1) * (ty1 - ty0 + 1), math.max(tx1 - tx0 + 1, ty1 - ty0 + 1)
+			local lods = ns.MapMinimapLOD and ns.MapMinimapLOD[cont]
+			local wn = count <= 64 and (lods and Smooth(count, NATIVE_FROM) or 1) or 0
+			local fine = Smooth(across, FINE_FROM)
+			local a3 = mix * wn
+			local a2 = a3 < 1 and mix * (1 - wn) * fine / (1 - a3) or 0
+			local a1 = mix * (1 - wn) * (1 - fine) / math.max(1e-3, (1 - a2) * (1 - a3))
+			-- (the game's own tiles first, then the finer copy: the nearest pictures, should MOST be reached)
+			if count <= 64 and a3 > 0.005 then
+				for tx = tx0, tx1 do
+					for ty = ty0, ty1 do
+						local fid = list[tx * 64 + ty]
+						if fid then Reveal.Want(layer, TileKey(cont, tx, ty), a3, 0, cont, fid, Reveal.TilePlace, tx, ty) end
+					end
+				end
+			end
+			for level, lv in ipairs(lods or EMPTY_LODS) do   -- (finest first)
+				local a = level == 1 and a2 or a1
+				if a > 0.005 then
+					local per, set = lv[1], LODSet(cont, level, lv[2])
+					for col = math.floor(tx0 / per), math.floor(tx1 / per) do
+						for row = math.floor(ty0 / per), math.floor(ty1 / per) do
+							if set[col * 64 + row] then
+								-- (below zero: a tile's key is a number too)
+								Reveal.Want(layer, -1 - (((cont * 2 + level) * 64 + col) * 64 + row), math.min(1, a), -level, cont, nil,
+									Reveal.LODPlace, col, row, per)
+							end
+						end
+					end
+				end
+			end
+		end
+	end
+	for key, s in pairs(Reveal.src) do
+		if not wanted[key] then
+			Reveal.Free(s)
+			Reveal.src[key] = nil
+		end
+	end
+	Reveal.any = next(Reveal.src) ~= nil
+	-- (the clips coming in: a step a frame until they're in, then nothing)
+	if Reveal.fading and not Reveal.fader then
+		Reveal.fader = CreateFrame("Frame")
+		Reveal.fader:SetScript("OnUpdate", function(self)
+			local now, fading = GetTime(), false
+			for _, s in pairs(Reveal.src) do
+				if Reveal.Alpha(s, now) then fading = true end
+			end
+			if not fading then self:Hide() end
+		end)
+	end
+	if Reveal.fader then Reveal.fader:SetShown(Reveal.fading) end
+end
+
+-- more explored, a city or a dungeon found (Stitch.lua's places.Reveal): the clips again, where the view is
+function S.RefreshMinimap()
+	local a = Reveal.last
+	if a and (Reveal.any or mod.ExploreReveal()) then Reveal.Update(a[1], a[2], a[3], a[4], a[5], a[6], a[7]) end
 end
 
 --------------------------------------------------------------------------------
@@ -582,6 +807,23 @@ end
 local underShown = {}           -- (reused each update)
 local UNDER_RANGE = { UNDER_FULL, UNDER_START }
 local FOCUS_RANGE = { 0.35, 0.8 }
+-- Explore to reveal: a cave surfaces once the ground over its middle is explored, as the game has it
+-- (S.Found, as the places' icons are found), not only where no hidden piece's rectangle lies over it.
+-- Looked up once a cave (`key`: its key, or its box), and again only once what's found may have changed
+local caveFound = {}            -- key -> true, or the stamp at which it wasn't
+local function CaveFound(key, r)
+	local found = caveFound[key]
+	if found == true then return true end
+	local stamp = S.ExploredStamp()
+	if found == stamp then return false end
+	if S.Found((r[1] + r[3]) / 2, (r[2] + r[4]) / 2) then
+		caveFound[key] = true
+		return true
+	end
+	caveFound[key] = stamp
+	return false
+end
+
 local function Surface(shown, key, r, u, v, hu, hv, steps, focus)
 	if not (r[3] > u - hu and r[1] < u + hu and r[4] > v - hv and r[2] < v + hv) then return focus end
 	local fill = math.min((2 * hu) / (r[3] - r[1]), (2 * hv) / (r[4] - r[2]))   -- view / cave, its longer way
@@ -592,6 +834,7 @@ local function Surface(shown, key, r, u, v, hu, hv, steps, focus)
 	if tz <= 0.01 then return focus end
 	-- (not one under land still unexplored, while that's hidden)
 	if S.HiddenAt and S.HiddenAt((r[1] + r[3]) / 2, (r[2] + r[4]) / 2) then return focus end
+	if mod.ExploreReveal() and not CaveFound(key, r) then return focus end
 	shown[key] = tz
 	local off = math.max(math.abs((r[1] + r[3]) / 2 - u) / hu, math.abs((r[2] + r[4]) / 2 - v) / hv)
 	return math.max(focus, tz * (1 - Smooth(off, FOCUS_RANGE)))
@@ -677,8 +920,8 @@ function S.CaveRectAt(u, v)
 		local r = RectOf(-i)
 		if r then best, area = Nearest(r, u, v, best, area) end
 	end
-	-- (Explore to reveal: not one under land still hidden, which doesn't surface; the zoom stops as anywhere)
-	if best and mod.ExploreReveal() and S.HiddenAt and S.HiddenAt((best[1] + best[3]) / 2, (best[2] + best[4]) / 2) then return end
+	-- (Explore to reveal: not over one that isn't found, which doesn't surface; the zoom stops as anywhere)
+	if best and mod.ExploreReveal() and not CaveFound(best, best) then return end
 	if best then return best[1], best[2], best[3], best[4] end
 end
 
@@ -845,9 +1088,13 @@ function S.SetView(u, v, hu, hv, zoom, steps)
 	local most = CityMost()
 	if mix > most then mix = mix + (most - mix) * (city or 0) end
 	cv.mix = mix
-	if S.MinimapShown then S.MinimapShown(mix > 0.004) end   -- (unexplored land hidden over it: Stitch.lua)
+	-- (Explore to reveal: the minimap through the explored pieces alone, Reveal, in place of the tiles
+	-- and of Stitch.lua's cover over them)
+	local reveal = mod.ExploreReveal()
+	if S.MinimapShown then S.MinimapShown(mix > 0.004 and not reveal) end   -- (unexplored land hidden over it: Stitch.lua)
 	local conts = Try("continents", ContinentsInView, u, v, hu, hv) or {}
-	Try("minimap", UpdateMinimap, L.minimap, conts, u, v, hu, hv, mix)
+	Try("minimap", UpdateMinimap, L.minimap, conts, u, v, hu, hv, reveal and 0 or mix)
+	if reveal or Reveal.any then Try("explored minimap", Reveal.Update, L.minimap, conts, u, v, hu, hv, reveal and mix or 0) end
 	Try("underground cities' minimap", UpdateCityMinimap, u, v, hu, hv, inside)
 	cv.gapTiles = Try("minimap in the gaps", UpdateGapMinimap, conts, u, v, hu, hv,
 		-- (not with Explore to reveal: the land between the zones has nothing to explore, so it's never found)

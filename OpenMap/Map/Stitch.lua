@@ -3519,17 +3519,92 @@ function S.Found(u, v)
 	return places.Found(u, v)
 end
 
+-- The close-up minimap with the option on (Close.lua's Reveal): the game's minimap is drawn only
+-- through the explored pieces' own art, a piece's alpha its shape, so its detail ends where the painted
+-- land does and as softly. The cover that hides unexplored land over the minimap otherwise
+-- (Shade.Hide) is the unexplored pieces' rectangles less the explored ones': land under no piece's
+-- rectangle (most of a zone: the pieces' rectangles cover a third to a half of its map), and all of an
+-- explored piece's rectangle, its corners too, showed the minimap, in rectangles (a player's report).
+-- Shade.stamp: goes up each time what's explored or found may have changed; Shade.tiles: mapID -> its
+-- explored pieces' tiles as listed at a stamp
+Shade.stamp, Shade.tiles, Shade.edges = 0, {}, {}
+
+-- a zone's explored pieces' tiles, where the overlays draw them on the world (normalized): { file, u0,
+-- v0, u1, v1 (the part of the file that shows), fu1, fv1 (the whole file's far corner: the next power of
+-- two at an edge), zone = mapID }, the files as the client has them. As the art has it: a piece explored
+-- since and not drawn yet waits for S.RefreshExplored. Each tile's table is kept until the next stamp
+-- (Close.lua keys its masks by it)
+function Shade.Explored(mapID)
+	local known = Shade.tiles[mapID]
+	if known and known.stamp == Shade.stamp then return known end
+	local out, list, p = { stamp = Shade.stamp }, pieces[mapID], Place(mapID)
+	Shade.tiles[mapID] = out
+	if not (list and p) then return out end
+	local tw, th = p.layer.tileWidth, p.layer.tileHeight
+	for _, info in ipairs(C_MapExplorationInfo.GetExploredMapTextures(mapID) or NONE) do
+		local w, h, x, y = info.textureWidth, info.textureHeight, info.offsetX, info.offsetY
+		local piece = list[w .. ":" .. h .. ":" .. x .. ":" .. y]
+		if piece and not piece.unexplored and not info.isShownByMouseOver then
+			local cols, rows = math.ceil(w / tw), math.ceil(h / th)
+			for j = 1, rows do
+				local ph = (j < rows) and th or (h - (rows - 1) * th)
+				for k = 1, cols do
+					local file = info.fileDataIDs[(j - 1) * cols + k]
+					file = tonumber(file) or file
+					local pw = (k < cols) and tw or (w - (cols - 1) * tw)
+					if file and pw > 0 and ph > 0 and not (ns.MapBlank and ns.MapBlank[file]) then
+						local fw, fh = (k < cols) and tw or Pow2(pw), (j < rows) and th or Pow2(ph)
+						local tx, ty = p.left + (x + (k - 1) * tw) * p.sx, p.top + (y + (j - 1) * th) * p.sy
+						out[#out + 1] = { file, tx / W, ty / H, (tx + pw * p.sx) / W, (ty + ph * p.sy) / H,
+							(tx + fw * p.sx) / W, (ty + fh * p.sy) / H, zone = mapID }
+					end
+				end
+			end
+		end
+	end
+	return out
+end
+
+-- every explored tile that reaches into a box of the world (normalized), added to `out`
+function S.ExploredTiles(u0, v0, u1, v1, out)
+	for mapID in pairs(pieces) do
+		local l, r, t, b = S.Rect(mapID)
+		if l and r > u0 and l < u1 and b > v0 and t < v1 then
+			for _, e in ipairs(Shade.Explored(mapID)) do
+				if e[4] > u0 and e[2] < u1 and e[5] > v0 and e[3] < v1 then out[#out + 1] = e end
+			end
+		end
+	end
+	return out
+end
+
+function S.ExploredStamp() return Shade.stamp end
+
+-- a zone's own frame as a mask on `layer`, as its overlays have it (MapEdge, measured; else the thin
+-- feather): made once a zone
+function S.EdgeMask(layer, mapID)
+	if Shade.edges[mapID] == nil then
+		local p = Place(mapID)
+		Shade.edges[mapID] = p and (ZoneMask(layer, p, EDGE) or Feather(layer, p, FEATHER_THIN)) or false
+	end
+	return Shade.edges[mapID] or nil
+end
+
 -- what else the option keeps to what's found, looked at again: after the icons (S.RefreshFound), and as
 -- the option is turned on or off
 function places.Reveal()
+	Shade.stamp = Shade.stamp + 1
 	places.Fills()
 	if S.RefreshFolk then S.RefreshFolk(true) end      -- (Townsfolk.lua)
 	if S.RefreshRoutes then S.RefreshRoutes(true) end  -- (Routes.lua)
+	if S.RefreshMinimap then S.RefreshMinimap() end    -- (Close.lua)
 end
 
 function S.SetExploreReveal(on)
 	on = on and true or false
 	if (places.explore or false) == on then return end
 	places.explore = on
+	-- (the minimap's tiles aren't drawn with it on, nor the cover for them made: Close.lua says once they're back)
+	if on then S.MinimapShown(false) end
 	places.Reveal()
 end

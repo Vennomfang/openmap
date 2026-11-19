@@ -176,8 +176,16 @@ map's piece that reaches into its box is explored: `places.Fills`, `Shade.Over`)
 ground isn't explored (`S.FoundIn`, a pin as it's made and a few hundred a frame after that:
 Townsfolk.lua's `S.RefreshFolk`); a boat's or zeppelin's route with neither dock found (Routes.lua); a
 flight route through flight masters not learned (Flights.lua); the search finding a dungeon or a flight
-master not found (Nav.lua's `Revealed`); the minimap in the gaps; and the zoom going on over a cave
-under hidden land (Close.lua). `S.SetExploreReveal` tells Stitch.lua, and `S.RefreshFound` (the map
+master not found (Nav.lua's `Revealed`); and the close-up (Close.lua). There the minimap is drawn only
+through the explored pieces: each of its pictures (a tile, a piece of a smaller copy) as a clip for
+every explored tile that reaches into it, masked by that tile's own art (its alpha is the explored
+area's shape and soft edge: `Reveal`, `S.ExploredTiles`), by its zone's frame and by the continent's
+land, in place of the usual tiles and of the cover over them (which hides the unexplored pieces'
+rectangles less the explored ones', so left the minimap showing on land under no piece's rectangle,
+most of a zone, and in the corners of an explored piece's: a player's report). A clip comes in over a
+moment, hidden until its first step. No minimap in the gaps; and a cave surfaces, and the zoom goes on
+over it, only once the game has the ground over its middle as explored (`CaveFound`: `S.Found`).
+`S.SetExploreReveal` tells Stitch.lua, and `S.RefreshFound` (the map
 built, somewhere explored, a city or a dungeon entered) looks at all of it again (`places.Reveal`). Off,
 none of it runs. Not held back: other addons' icons, your own pins and drawings, zone names and levels
 (the game's own map names every zone), and a dungeon's map opened from an entrance that's found.

@@ -184,20 +184,39 @@ class CaveTests(unittest.TestCase):
             assert(#Shown() == 0)
         """)
 
-    def test_explore_to_reveal_stops_the_zoom_over_a_hidden_cave(self):
-        # (S.CaveRectAt lets the zoom go on in over a cave: not, with Explore to reveal, over one under land
-        # still hidden, which doesn't surface; as before with the option off, or once the land's explored)
+    def test_explore_to_reveal_a_cave_once_the_ground_over_it_is_explored(self):
+        # (with Explore to reveal a cave surfaces, and the zoom goes on in over it (S.CaveRectAt), only once
+        # the game has the ground over its middle as explored (S.Found, as the places' icons are found):
+        # asked once a cave, and again only once what's found may have changed; nothing asked with it off)
         self.lua.execute("""
-            local _, c = Pick(0, 150, 300)
+            local i, c = Pick(0, 150, 300)
             local u, v = Middle(c)
-            local hidden, asked = true, 0
-            function S.HiddenAt() asked = asked + 1 return hidden end
-            assert(S.CaveRectAt(u, v), 'off: the zoom goes on over it, hidden land or not')
-            assert(asked == 0, 'off: the land not even asked about')
+            local p = c[6]
+            local found, asked, stamp = false, 0, 1
+            function S.Found(fu, fv)
+                asked = asked + 1
+                assert(math.abs(fu - u) < 1e-6 and math.abs(fv - v) < 1e-6, 'asked about its middle')
+                return found
+            end
+            function S.ExploredStamp() return stamp end
+            local u0, _, u1 = S.CaveRectAt(u, v)
+            local w = u1 - u0
+            Look(u, v, w * 1.2, 120)
+            assert(Up(p[1]) and asked == 0, 'off: up, and the ground not asked about')
             mod.db.exploreReveal = true
-            assert(S.CaveRectAt(u, v) == nil, 'on: not over a cave under hidden land')
-            hidden = false
-            assert(S.CaveRectAt(u, v), 'on, the land explored: over it again')
+            Look(u, v, w * 1.2, 120)
+            assert(not Up(p[1]), 'on: not over ground still to be explored')
+            assert(S.CaveRectAt(u, v) == nil, '... and the zoom stops as anywhere')
+            local once = asked
+            for _ = 1, 5 do Look(u, v, w * 1.2, 120) assert(S.CaveRectAt(u, v) == nil) end
+            assert(asked == once, 'asked again with nothing explored since')
+            found, stamp = true, 2                  -- explored
+            Look(u, v, w * 1.2, 120)
+            assert(Up(p[1]) and S.CaveRectAt(u, v), 'explored: up, and the zoom goes on in over it')
+            once = asked
+            stamp = 3
+            Look(u, v, w * 1.2, 120)
+            assert(asked == once and Up(p[1]), 'found once, found: not asked again')
         """)
 
     def test_the_cave_at_an_entrance(self):

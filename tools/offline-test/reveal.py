@@ -8,7 +8,10 @@ and search results show for what has been explored, that exploring brings them o
 option off nothing is hidden and nothing is looked up. (A stub: it can't see the art, nor what the game's
 own frames and lookups do; docs/testing.md has the in-game check.) Then Stitch.lua's Shade.Over alone,
 against every rectangle of random pieces. And the one-time setup question (Welcome.lua): every account
-asked once, by a popup that only one of its two buttons answers.
+asked once, by a popup that only one of its two buttons answers. And the close-up minimap (Close.lua):
+the world has the game's minimap tiles and its smaller copies, and every picture of it on screen is
+looked at, at every zoom: with the option on, each must be cut to an explored piece and masked by that
+piece's own art.
 python -P tools/offline-test/reveal.py. Needs lupa."""
 import json
 import os
@@ -42,7 +45,7 @@ MAPS = {
 }
 PIECES = {
 	[110] = { ["200:200:100:100"] = "1101", ["200:200:600:300"] = "1102" },   -- West: its first piece (over the city), its second
-	[120] = { ["300:300:300:200"] = "1201" },                                 -- East's
+	[120] = { ["300:300:300:200"] = "1201,1202,1203,1204" },                  -- East's (four tiles of 256)
 }
 explored = {}                   -- "<zone>:<piece>" -> true
 here = 10                       -- the map the player is on
@@ -80,13 +83,14 @@ C_Map = {
 		end
 	end,
 	GetBestMapForUnit = function() return here end,
-	-- (the continent's corners in yards: 1000 yards a side, x up the map and y across it, as the game's)
+	-- (the continent's corners in yards: 16000 yards a side, 30 minimap tiles, x up the map and y across
+	-- it, as the game's)
 	GetWorldPosFromMapPos = function(id, pos)
-		if id == 1415 then return 0, { x = (1 - pos.y) * 1000, y = (1 - pos.x) * 1000 } end
+		if id == 1415 then return 0, { x = (1 - pos.y) * 16000, y = (1 - pos.x) * 16000 } end
 	end,
 }
 -- world yards (x, y) of a point on the world (normalized)
-function Yards(u, v) return (1 - v) * 1000, (1 - u) * 1000 end
+function Yards(u, v) return (1 - v) * 16000, (1 - u) * 16000 end
 C_MapExplorationInfo = {
 	GetExploredMapTextures = function(id)
 		local out = {}
@@ -94,7 +98,7 @@ C_MapExplorationInfo = {
 			if explored[id .. ":" .. key] then
 				local w, h, x, y = strsplit(":", key)
 				out[#out + 1] = { textureWidth = tonumber(w), textureHeight = tonumber(h), offsetX = tonumber(x), offsetY = tonumber(y),
-					fileDataIDs = { tonumber(files) }, isShownByMouseOver = false }
+					fileDataIDs = { strsplit(",", files) }, isShownByMouseOver = false }
 			end
 		end
 		return out
@@ -148,6 +152,38 @@ function Frames(n)
 	end
 end
 
+-- the game's minimap over all of it: a tile for each 533 yards (files from 9000000), and its two smaller
+-- copies, 4 and 16 tiles a piece
+MINI, LOD4, LOD16 = {}, {}, {}
+for tx = 2, 31 do
+	for ty = 2, 31 do MINI[tx * 64 + ty] = 9000000 + tx * 64 + ty end
+end
+for col = 0, 7 do
+	for row = 0, 7 do LOD4[#LOD4 + 1] = col * 64 + row end
+end
+for col = 0, 1 do
+	for row = 0, 1 do LOD16[#LOD16 + 1] = col * 64 + row end
+end
+-- what each texture was given (its file, its texcoords, its masks), kept on it for the tests to read
+do
+	local mt = getmetatable(UIParent)
+	local index = mt.__index
+	local kept = {
+		SetTexture = function(self, file) rawset(self, "__file", file) return true end,
+		SetTexCoord = function(self, ...) rawset(self, "__coords", { ... }) end,
+		AddMaskTexture = function(self, mask)
+			local masks = rawget(self, "__masks") or {}
+			rawset(self, "__masks", masks)
+			masks[#masks + 1] = mask
+		end,
+		RemoveMaskTexture = function(self, mask)
+			local masks = rawget(self, "__masks") or {}
+			for i = #masks, 1, -1 do if masks[i] == mask then table.remove(masks, i) end end
+		end,
+	}
+	mt.__index = function(t, k) return kept[k] or index(t, k) end
+end
+
 local wx1, wy1 = Yards(0.38, 0.56)      -- West's dock, on its second piece
 local wx2, wy2 = Yards(0.68, 0.47)      -- East's, on its piece
 local fx1, fy1 = Yards(0.19, 0.41)      -- flight masters: West's camp, a post between, East's camp
@@ -155,6 +191,8 @@ local fx2, fy2 = Yards(0.45, 0.50)
 local fx3, fy3 = Yards(0.70, 0.45)
 local data = {
 	MapReveal = PIECES,
+	MapMinimap = { [0] = MINI },
+	MapMinimapLOD = { [0] = { { 4, LOD4 }, { 16, LOD16 } } },
 	-- a painted gap a piece of East's reaches into, and one with no piece near it
 	MapGapFills = {
 		{ "G01", { 0.70, 0.60, 0.80, 0.70 }, 256, 256, 1, { 1 } },
@@ -214,6 +252,93 @@ function Flight(id)
 	for _, pin in ipairs(S.GetPinSet("flight").pins) do if pin.node == id then return pin end end
 end
 function Fill(i) return S.fills[i][1]:IsShown() end
+-- The close-up minimap. The view put on a point (Close.lua's S.SetView, as WorldMap.lua calls it on a pan
+-- or zoom), `across` of the world wide, `steps` zoomed; and time passed (a picture comes in over a moment)
+function Look(u, v, across, steps) S.SetView(u, v, across / 2, across / 2, steps, steps) end
+function Wait(seconds) NOW = NOW + (seconds or 1) RunOnUpdate(0.016) end
+-- a region's place on the world (normalized), as Stitch.lua anchored it
+function Rect(r)
+	local at = r.__points[1]
+	if not at then return end
+	local u0, v0 = at[4] / 1002, -at[5] / 668
+	return u0, v0, u0 + r.__w / 1002, v0 + r.__h / 668
+end
+local function visible(r)
+	while r do
+		if rawget(r, "__shown") == false then return false end
+		r = rawget(r, "__parent")
+	end
+	return true
+end
+local function minimap(file)
+	return (type(file) == "number" and file >= 9000000) or (type(file) == "string" and file:find("MapMiniLOD", 1, true) ~= nil)
+end
+-- every picture of the minimap on screen now (a tile, a piece of a smaller copy, or a clip of one)
+function Imagery()
+	local out = {}
+	for _, r in ipairs(FRAMES) do
+		if r.__kind == "Texture" and minimap(rawget(r, "__file")) and visible(r) and (r.__alpha or 1) > 0 and r.__points[1] then
+			out[#out + 1] = r
+		end
+	end
+	return out
+end
+-- the explored pieces' tiles as the test has them: file -> { zone, piece, its place on the world, and its
+-- file's whole place (256 px a file; at a piece's far edge, the next power of two past what's left) }
+TILES = {}
+local function pow2(n) local p = 16 while p < n do p = p * 2 end return p end
+for zone, art in pairs({ [10] = 110, [20] = 120 }) do
+	for key, files in pairs(PIECES[art]) do
+		local w, h, x, y = strsplit(":", key)
+		w, h, x, y = tonumber(w), tonumber(h), tonumber(x), tonumber(y)
+		local m = MAPS[zone].rect
+		local ku, kv = (m[2] - m[1]) / 1002, (m[4] - m[3]) / 668
+		local cols = math.ceil(w / 256)
+		for i, file in ipairs({ strsplit(",", files) }) do
+			local col, row = (i - 1) % cols, math.floor((i - 1) / cols)
+			local x0, y0 = x + col * 256, y + row * 256
+			local pw, ph = math.min(256, x + w - x0), math.min(256, y + h - y0)
+			TILES[tonumber(file)] = { zone = zone, piece = key,
+				m[1] + x0 * ku, m[3] + y0 * kv, m[1] + (x0 + pw) * ku, m[3] + (y0 + ph) * kv,
+				m[1] + (x0 + (pw < 256 and pow2(pw) or 256)) * ku, m[3] + (y0 + (ph < 256 and pow2(ph) or 256)) * kv }
+		end
+	end
+end
+-- the explored tile a picture is cut to and masked by, if it is: its whole rectangle inside the tile's,
+-- the tile's own art laid over the tile as its mask
+function CutTo(r)
+	local u0, v0, u1, v1 = Rect(r)
+	for _, mask in ipairs(rawget(r, "__masks") or {}) do
+		local t = TILES[rawget(mask, "__file")]
+		local m0, n0, m1, n1 = Rect(mask)
+		if t and m0 and explored[t.zone .. ":" .. t.piece]
+			and u0 >= t[1] - 1e-9 and v0 >= t[2] - 1e-9 and u1 <= t[3] + 1e-9 and v1 <= t[4] + 1e-9
+			and math.abs(m0 - t[1]) < 1e-9 and math.abs(n0 - t[2]) < 1e-9 and math.abs(m1 - t[5]) < 1e-9 and math.abs(n1 - t[6]) < 1e-9 then
+			return t
+		end
+	end
+end
+-- the pictures on screen not cut to explored land (none, with Explore to reveal), and how many are up
+function Leaks()
+	local leaks, shown = 0, Imagery()
+	for _, r in ipairs(shown) do
+		if not CutTo(r) then leaks = leaks + 1 end
+	end
+	return leaks, #shown
+end
+-- whether a picture of the minimap is up over a point of the world
+function Over(u, v)
+	for _, r in ipairs(Imagery()) do
+		local u0, v0, u1, v1 = Rect(r)
+		if u >= u0 and u <= u1 and v >= v0 and v <= v1 then return true end
+	end
+	return false
+end
+-- the views a test looks at: over each zone and the sea, from a zone's width down to a few tiles
+VIEWS = {}
+for _, at in ipairs({ { 0.19, 0.38 }, { 0.3, 0.5 }, { 0.42, 0.7 }, { 0.66, 0.44 }, { 0.8, 0.3 }, { 0.5, 0.5 }, { 0.05, 0.9 } }) do
+	for _, across in ipairs({ 0.9, 0.5, 0.3, 0.12, 0.05 }) do VIEWS[#VIEWS + 1] = { at[1], at[2], across } end
+end
 function Route() return (S.GetPinSet("routes").frame:GetChildren()):IsShown() end
 function Folk(name)
 	for _, pin in ipairs(S.GetPinSet("tf_vendor").pins) do if pin.data.name == name then return pin:IsShown() end end
@@ -660,6 +785,233 @@ class SettingsTests(Case):
             rows = Rows()
             for _, id in ipairs(set) do assert(not rows[id].locked, id) end
             assert(rows.foundOnly[2]() == false and rows["unexplored.hide"][2]() == false)
+        """)
+
+
+class MinimapTests(Case):
+    """the close-up minimap: with Explore to reveal, only through explored pieces, at every zoom and copy"""
+
+    def setUp(self):
+        Case.setUp(self)
+        # (the minimap from the whole world in, so every zoom has it: its smaller copies further out, the
+        # game's own tiles close up)
+        self.run_lua("mod.db.minimap, mod.db.minimapFrom = true, 1 mod:Refresh() Frames()")
+
+    def test_off_the_usual_minimap_and_nothing_of_this(self):
+        self.run_lua("""
+            local asked = 0
+            local tiles = S.ExploredTiles
+            S.ExploredTiles = function(...) asked = asked + 1 return tiles(...) end
+            local kinds = {}
+            for _, view in ipairs(VIEWS) do
+                Look(view[1], view[2], view[3], 40) Wait()
+                local leaks, shown = Leaks()
+                assert(shown > 0 and leaks == shown, "off: the minimap's own pictures, whole")
+                for _, r in ipairs(Imagery()) do kinds[type(r.__file)] = true end
+            end
+            assert(kinds.number and kinds.string, "the game's tiles and the smaller copies both looked at")
+            assert(asked == 0, "off: the explored pieces asked for")
+        """)
+
+    def test_a_zone_never_visited_has_none_at_any_zoom(self):
+        # (the report: zoomed in on a zone never visited, the minimap showed past some zoom)
+        self.run_lua("""
+            Turn(true)
+            for _, view in ipairs(VIEWS) do
+                for _, steps in ipairs({ 2, 12, 25, 40, 80 }) do
+                    Look(view[1], view[2], view[3], steps) Wait()
+                    local _, shown = Leaks()
+                    assert(shown == 0, shown .. " pictures of the minimap with nothing explored, at " .. view[1] .. ", " .. view[2] .. " x" .. steps)
+                end
+            end
+        """)
+
+    def test_only_through_explored_pieces_at_every_zoom(self):
+        self.run_lua("""
+            Turn(true)
+            Explore(10, "200:200:100:100")           -- West's first piece
+            Explore(20, "300:300:300:200")           -- East's (four tiles)
+            local kinds, most = {}, 0
+            for _, view in ipairs(VIEWS) do
+                for _, steps in ipairs({ 2, 12, 25, 40, 80 }) do
+                    Look(view[1], view[2], view[3], steps) Wait()
+                    local leaks, shown = Leaks()
+                    assert(leaks == 0, leaks .. " of " .. shown .. " pictures not cut to an explored piece, at " .. view[1] .. ", " .. view[2] .. " x" .. steps)
+                    most = math.max(most, shown)
+                    for _, r in ipairs(Imagery()) do
+                        kinds[type(r.__file)] = true
+                        -- (each: the part of its picture over that tile, through the land, the piece and the zone's frame)
+                        local c = r.__coords
+                        assert(c[1] >= -1e-9 and c[2] <= 1 + 1e-9 and c[1] < c[2] and c[3] >= -1e-9 and c[4] <= 1 + 1e-9 and c[3] < c[4])
+                        local land, frame = 0, 0
+                        for _, mask in ipairs(r.__masks) do
+                            local file = tostring(rawget(mask, "__file"))
+                            if file:find("MapMiniLand", 1, true) then land = land + 1 end
+                            if file:find("MapFeatherThin", 1, true) then
+                                -- (its zone's own frame, laid over the zone's map)
+                                local z = MAPS[CutTo(r).zone].rect
+                                local m0, n0, m1, n1 = Rect(mask)
+                                assert(math.abs(m0 - z[1]) < 1e-9 and math.abs(m1 - z[2]) < 1e-9 and math.abs(n0 - z[3]) < 1e-9 and math.abs(n1 - z[4]) < 1e-9)
+                                frame = frame + 1
+                            end
+                        end
+                        assert(#r.__masks == 3 and land == 1 and frame == 1, "the continent's land, the piece, the zone's frame: " .. #r.__masks .. " masks")
+                    end
+                end
+            end
+            assert(most > 0 and kinds.number and kinds.string, "the game's tiles and the smaller copies, both cut")
+            -- where: over the explored pieces, not West's other piece, land under no piece, the sea
+            Look(0.3, 0.5, 0.5, 40) Wait()
+            assert(Over(0.18, 0.38) and Over(0.19, 0.36), "none over West's explored piece")
+            assert(not Over(0.38, 0.56), "over West's unexplored piece")
+            assert(not Over(0.45, 0.75) and not Over(0.3, 0.25), "over land under no piece")
+            Look(0.68, 0.51, 0.4, 40) Wait()
+            for _, at in ipairs({ { 0.66, 0.44 }, { 0.73, 0.5 }, { 0.66, 0.63 }, { 0.73, 0.63 } }) do
+                assert(Over(at[1], at[2]), "none over East's piece at " .. at[1] .. ", " .. at[2] .. " (each of its four tiles)")
+            end
+            assert(not Over(0.8, 0.3) and not Over(0.55, 0.75) and not Over(0.6, 0.5), "past East's piece")
+        """)
+
+    def test_the_same_pictures_at_the_same_strengths(self):
+        # (what's drawn is the usual minimap's own pictures, as strong: only cut. All of it explored here)
+        self.run_lua("""
+            for _, key in ipairs({ "10:200:200:100:100", "10:200:200:600:300", "20:300:300:300:200" }) do explored[key] = true end
+            S.RefreshExplored() Frames()
+            for _, view in ipairs({ { 0.19, 0.38, 0.05 }, { 0.66, 0.44, 0.12 }, { 0.4, 0.5, 0.5 }, { 0.5, 0.5, 0.9 } }) do
+                for _, steps in ipairs({ 12, 25, 60 }) do
+                    Turn(false)
+                    Look(view[1], view[2], view[3], steps) Wait()
+                    local usual = {}
+                    for _, r in ipairs(Imagery()) do usual[r.__file] = r.__alpha end
+                    Turn(true)
+                    Look(view[1], view[2], view[3], steps) Wait()
+                    local n = 0
+                    for _, r in ipairs(Imagery()) do
+                        n = n + 1
+                        assert(usual[r.__file], "a picture the usual minimap doesn't draw: " .. tostring(r.__file))
+                        assert(math.abs(usual[r.__file] - r.__alpha) < 1e-9, "at another strength")
+                    end
+                    assert(n > 0)
+                end
+            end
+        """)
+
+    def test_a_picture_comes_in_over_a_moment(self):
+        self.run_lua("""
+            Turn(true)
+            Explore(20, "300:300:300:200")
+            Look(0.66, 0.44, 0.12, 40)
+            local _, shown = Leaks()
+            assert(shown == 0, "up the moment it was made: it popped in")
+            Wait(0.15)
+            local part = Imagery()
+            assert(#part > 0, "nothing of it half way in")
+            local half = part[1].__alpha
+            Wait(0.3)
+            local full = Imagery()
+            assert(#full == #part)
+            assert(half > 0 and half < full[1].__alpha, "half way in at " .. half .. ", in at " .. full[1].__alpha)
+            -- (in: the same strength as the usual minimap's, test_the_same_pictures_at_the_same_strengths)
+            -- the view moved on: the pictures already up stay up, a new one comes in on its own
+            local before = {}
+            for _, r in ipairs(full) do before[r] = r.__alpha end
+            Look(0.70, 0.50, 0.12, 40)
+            local kept, new = 0, 0
+            for _, r in ipairs(Imagery()) do
+                if before[r] then kept = kept + 1 assert(r.__alpha == before[r], "one already up dipped") end
+            end
+            assert(kept > 0, "none of those up stayed up through a pan")
+            Wait(0.5)
+            assert(#Imagery() > kept, "none came in over the ground panned to")
+        """)
+
+    def test_explored_with_the_map_still(self):
+        self.run_lua("""
+            Turn(true)
+            Look(0.66, 0.44, 0.12, 40) Wait()
+            assert(select(2, Leaks()) == 0)
+            Explore(20, "300:300:300:200") Wait()    -- (MAP_EXPLORATION_UPDATED, the view not moved)
+            local leaks, shown = Leaks()
+            assert(shown > 0 and leaks == 0 and Over(0.66, 0.44), "explored: its minimap without a pan")
+        """)
+
+    def test_not_before_the_art_has_it(self):
+        # (explored with the map closed: the art is brought up to date as the map next opens, WorldMap.lua's
+        # exploredDirty. Until then the piece isn't drawn, and the minimap isn't drawn through it either)
+        self.run_lua("""
+            Turn(true)
+            explored["20:300:300:300:200"] = true    -- (the game has it; the art hasn't been told yet)
+            S.RefreshFound() Frames()                -- (what's found looked at again meanwhile: a dungeon entered)
+            Look(0.66, 0.44, 0.12, 40) Wait()
+            assert(#Imagery() == 0, "the minimap through a piece the art doesn't show yet")
+            S.RefreshExplored() Frames() Wait()
+            assert(#Imagery() > 0 and Leaks() == 0)
+        """)
+
+    def test_no_cover_made_for_tiles_that_arent_drawn(self):
+        # (Stitch.lua's cover over the usual tiles, the zone's blank art again over its unexplored pieces:
+        # not made, nor drawn, while the tiles themselves aren't)
+        self.run_lua("""
+            local function blank()                   -- (the zones' base art on screen: files 1001.., 2001..)
+                local n = 0
+                for _, r in ipairs(FRAMES) do
+                    local file = rawget(r, "__file")
+                    if r.__kind == "Texture" and type(file) == "number" and file > 1000 and file < 3100 and r.__points[1] and rawget(r, "__shown") ~= false then n = n + 1 end
+                end
+                return n
+            end
+            Turn(true)
+            Explore(10, "200:200:100:100")
+            for _ = 1, 3 do                          -- (the zones' own art in view all loaded and shown first)
+                mod.db.minimap = not mod.db.minimap
+                Look(0.3, 0.5, 0.5, 40) Wait()
+            end
+            assert(mod.db.minimap == false)
+            local without = blank()
+            mod.db.minimap = true
+            Look(0.3, 0.5, 0.5, 40) Wait()
+            assert(select(2, Leaks()) > 0, "the minimap through the explored piece")
+            assert(blank() == without, (blank() - without) .. " textures of the cover made, the tiles it covers not drawn")
+        """)
+
+    def test_off_again_the_usual_minimap_and_the_clips_put_away(self):
+        self.run_lua("""
+            Turn(true)
+            Explore(20, "300:300:300:200")
+            Look(0.66, 0.44, 0.12, 40) Wait()
+            local _, cut = Leaks()
+            assert(cut > 0)
+            Turn(false)
+            Look(0.66, 0.44, 0.12, 40) Wait()
+            local leaks, shown = Leaks()
+            assert(shown > 0 and leaks == shown, "off again: the usual tiles, and no clip left up")
+            -- and on again: the same clips, and the masks, used again (none made anew)
+            local made = #FRAMES
+            Turn(true)
+            Look(0.66, 0.44, 0.12, 40) Wait()
+            local leaks2, cut2 = Leaks()
+            assert(leaks2 == 0 and cut2 == cut and #FRAMES == made, (#FRAMES - made) .. " regions made anew")
+        """)
+
+    def test_masks_let_go_with_their_clips(self):
+        # (a mask no clip uses is unanchored: whatever hangs from the map is laid out again on every pan)
+        self.run_lua("""
+            Turn(true)
+            Explore(10, "200:200:100:100")
+            Explore(20, "300:300:300:200")
+            local function masksUp()
+                local n = 0
+                for _, r in ipairs(FRAMES) do
+                    if r.__kind == "MaskTexture" and TILES[rawget(r, "__file")] and r.__points[1] then n = n + 1 end
+                end
+                return n
+            end
+            Look(0.68, 0.51, 0.4, 40) Wait()
+            assert(masksUp() == 4, masksUp() .. " masks for East's four tiles")
+            Look(0.19, 0.38, 0.05, 40) Wait()
+            assert(masksUp() == 1, masksUp() .. " masks with West's one tile in view")
+            Look(0.05, 0.9, 0.05, 40) Wait()
+            assert(masksUp() == 0 and select(2, Leaks()) == 0, "masks left anchored with nothing explored in view")
         """)
 
 
