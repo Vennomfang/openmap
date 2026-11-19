@@ -12,6 +12,10 @@
   you haven't learned, and the search, which finds a dungeon or a flight master only once you have.
   While it's on, "Unexplored areas" and "Only places you've found" are set by it, and are as you left
   them once it's off. A dungeon's map still opens from an entrance you've found.
+  Zoomed right in, the game's minimap (the close-up's real ground and buildings) shows only where
+  you've explored too, in the shape of each explored area with its soft edge, and comes in gently as
+  you zoom: none of it over a zone you've never been to or the unexplored parts of one you have; and a
+  cave's map surfaces only once the ground over it is explored.
   You're asked once, for all your characters, a few seconds into your first login with this version,
   on a new install and on one set up long ago alike: "Reveal as I explore" or "Show everything" (as
   before). Only one of the two buttons answers it; put aside any other way, it asks again at the next
