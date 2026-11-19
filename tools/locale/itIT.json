@@ -551,5 +551,12 @@
  "Explore to reveal": "Esplora per rivelare",
  "The map shows only what this character has found, as the game's own map does: unexplored areas are hidden, dungeons, boats, zeppelins and townsfolk show once you've explored where they are, flight masters once you've learned them, and the search finds only those. While it's on, it sets Unexplored areas and Only places you've found.": "La mappa mostra solo ciò che questo personaggio ha scoperto, come la mappa del gioco: le aree inesplorate sono nascoste, spedizioni, navi, zeppelin e cittadini compaiono dopo aver esplorato la zona in cui si trovano, i maestri di volo dopo averli scoperti, e la ricerca trova solo quelli. Finché è attiva, imposta Aree inesplorate e Solo luoghi scoperti.",
  "Only what this character has found": "Solo ciò che questo personaggio ha scoperto",
- "Set by Explore to reveal": "Impostato da Esplora per rivelare"
+ "Set by Explore to reveal": "Impostato da Esplora per rivelare",
+ "How should OpenMap show the world? You're asked once, for all your characters.": "Come deve mostrare il mondo OpenMap? Ti viene chiesto una volta sola, per tutti i tuoi personaggi.",
+ "Reveal as I explore": "Rivela esplorando",
+ "Show everything": "Mostra tutto",
+ "%s: unexplored land stays hidden, and dungeons, boats, flight masters and townsfolk show once the character has found them, as on the game's own map.": "%s: le terre inesplorate restano nascoste, e spedizioni, navi, maestri di volo e cittadini compaiono quando il personaggio li ha scoperti, come sulla mappa del gioco.",
+ "%s: the whole map and every place from the start, as OpenMap has always shown it.": "%s: tutta la mappa e tutti i luoghi fin dall'inizio, come OpenMap ha sempre fatto.",
+ "To change it later: %s": "Per cambiarlo in seguito: %s",
+ "Or: %s": "Oppure: %s"
 }

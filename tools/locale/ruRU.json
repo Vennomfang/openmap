@@ -551,5 +551,12 @@
  "Explore to reveal": "Открывать по мере исследования",
  "The map shows only what this character has found, as the game's own map does: unexplored areas are hidden, dungeons, boats, zeppelins and townsfolk show once you've explored where they are, flight masters once you've learned them, and the search finds only those. While it's on, it sets Unexplored areas and Only places you've found.": "На карте только то, что открыл этот персонаж, как на карте самой игры: неисследованные области скрыты, подземелья, корабли, дирижабли и полезные NPC появляются после исследования места, где они находятся, распорядители полетов — после изучения, а поиск находит только их. Пока включено, задает «Неисследованные области» и «Только открытые места».",
  "Only what this character has found": "Только то, что открыл этот персонаж",
- "Set by Explore to reveal": "Задано настройкой «Открывать по мере исследования»"
+ "Set by Explore to reveal": "Задано настройкой «Открывать по мере исследования»",
+ "How should OpenMap show the world? You're asked once, for all your characters.": "Как OpenMap должен показывать мир? Вопрос задается один раз, для всех ваших персонажей.",
+ "Reveal as I explore": "Открывать исследуя",
+ "Show everything": "Показывать все",
+ "%s: unexplored land stays hidden, and dungeons, boats, flight masters and townsfolk show once the character has found them, as on the game's own map.": "%s: неисследованные земли скрыты, а подземелья, корабли, распорядители полетов и полезные NPC появляются, когда персонаж их откроет, как на карте самой игры.",
+ "%s: the whole map and every place from the start, as OpenMap has always shown it.": "%s: вся карта и все места с самого начала, как OpenMap показывал всегда.",
+ "To change it later: %s": "Изменить позже: %s",
+ "Or: %s": "Или: %s"
 }

@@ -13,6 +13,7 @@
 --   /openmap dungeons       which map each dungeon entrance opens (Dungeons.lua)
 --   /openmap entrance <name>  where you stand, as a dungeon entrance for tools/map-data (Dungeons.lua)
 --   /openmap highlights     where the game draws each zone's highlight, for tools/map-preview (Debug.lua)
+--   /openmap setup          the one-time setup question again: Explore to reveal, or everything shown (Welcome.lua)
 --------------------------------------------------------------------------------
 
 local ADDON, ns = ...
@@ -51,7 +52,7 @@ local function Slash(msg)
 	local run = {
 		status = "Diag", paint = "TogglePaint", notes = "TogglePaint", debug = "ToggleDebugOverlay",
 		bench = "Bench", pins = "TogglePins", news = "ToggleNews", entrance = "Entrance", draw = "ToggleSketch", dungeons = "DungeonDiag", bosses = "ToggleBossPlacer", forgetflights = "ForgetFlights",
-		welcome = "ShowWelcome", highlights = "Highlights", warm = "ToggleWarm",
+		welcome = "ShowWelcome", setup = "AskExplore", highlights = "Highlights", warm = "ToggleWarm",
 		reset = "ResetWindow",   -- (reset: the windowed map's size and place, for one off the screen)
 	}
 	-- (the controller view's diagnostics: it runs while OpenMap's usual map is off, PadView.lua)

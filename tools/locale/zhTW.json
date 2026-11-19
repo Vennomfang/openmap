@@ -551,5 +551,12 @@
  "Explore to reveal": "探索後顯示",
  "The map shows only what this character has found, as the game's own map does: unexplored areas are hidden, dungeons, boats, zeppelins and townsfolk show once you've explored where they are, flight masters once you've learned them, and the search finds only those. While it's on, it sets Unexplored areas and Only places you've found.": "地圖只顯示此角色已發現的內容，與遊戲原本的地圖一樣：未探索區域會隱藏，地城、船隻、飛艇和村民在你探索過其所在區域後顯示，飛行管理員在你發現後顯示，搜尋也只找得到這些。開啟時，「未探索區域」和「僅顯示已發現的地點」由它決定。",
  "Only what this character has found": "只顯示此角色已發現的內容",
- "Set by Explore to reveal": "由「探索後顯示」決定"
+ "Set by Explore to reveal": "由「探索後顯示」決定",
+ "How should OpenMap show the world? You're asked once, for all your characters.": "OpenMap 應如何顯示世界？只會詢問一次，對你的所有角色生效。",
+ "Reveal as I explore": "邊探索邊顯示",
+ "Show everything": "顯示全部",
+ "%s: unexplored land stays hidden, and dungeons, boats, flight masters and townsfolk show once the character has found them, as on the game's own map.": "%s：未探索的土地保持隱藏，地城、船隻、飛行管理員和村民在角色發現後才顯示，與遊戲原本的地圖一樣。",
+ "%s: the whole map and every place from the start, as OpenMap has always shown it.": "%s：從一開始就顯示整張地圖和所有地點，與 OpenMap 一直以來的方式相同。",
+ "To change it later: %s": "之後更改：%s",
+ "Or: %s": "或者：%s"
 }

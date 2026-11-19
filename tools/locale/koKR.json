@@ -551,5 +551,12 @@
  "Explore to reveal": "탐험해서 밝히기",
  "The map shows only what this character has found, as the game's own map does: unexplored areas are hidden, dungeons, boats, zeppelins and townsfolk show once you've explored where they are, flight masters once you've learned them, and the search finds only those. While it's on, it sets Unexplored areas and Only places you've found.": "이 캐릭터가 발견한 것만 지도에 표시합니다(게임 지도와 같은 방식). 탐험하지 않은 지역은 숨기고, 던전, 배, 비행선, 마을 주민은 그곳을 탐험한 뒤에, 비행 조련사는 발견한 뒤에 표시하며, 검색에도 그것들만 나옵니다. 켜져 있는 동안에는 '탐험하지 않은 지역'과 '발견한 장소만' 설정을 이 옵션이 정합니다.",
  "Only what this character has found": "이 캐릭터가 발견한 것만",
- "Set by Explore to reveal": "'탐험해서 밝히기'가 정함"
+ "Set by Explore to reveal": "'탐험해서 밝히기'가 정함",
+ "How should OpenMap show the world? You're asked once, for all your characters.": "OpenMap이 세계를 어떻게 보여 줄까요? 모든 캐릭터에 대해 한 번만 묻습니다.",
+ "Reveal as I explore": "탐험하며 밝히기",
+ "Show everything": "모두 표시",
+ "%s: unexplored land stays hidden, and dungeons, boats, flight masters and townsfolk show once the character has found them, as on the game's own map.": "%s: 탐험하지 않은 땅은 숨기고, 던전, 배, 비행 조련사, 마을 주민은 캐릭터가 발견한 뒤에 표시합니다(게임 지도와 같은 방식).",
+ "%s: the whole map and every place from the start, as OpenMap has always shown it.": "%s: 처음부터 지도 전체와 모든 장소를 표시합니다(OpenMap의 기존 방식).",
+ "To change it later: %s": "나중에 바꾸려면: %s",
+ "Or: %s": "또는: %s"
 }

@@ -7,8 +7,10 @@ what's checked is the addon's own code from the setting to the icons: which icon
 and search results show for what has been explored, that exploring brings them out, and that with the
 option off nothing is hidden and nothing is looked up. (A stub: it can't see the art, nor what the game's
 own frames and lookups do; docs/testing.md has the in-game check.) Then Stitch.lua's Shade.Over alone,
-against every rectangle of random pieces.
+against every rectangle of random pieces. And the one-time setup question (Welcome.lua): every account
+asked once, by a popup that only one of its two buttons answers.
 python -P tools/offline-test/reveal.py. Needs lupa."""
+import json
 import os
 import random
 import re
@@ -112,9 +114,31 @@ C_MapExplorationInfo = {
 	end,
 }
 C_TaxiMap = { GetTaxiNodesForMap = function() return {} end }
+-- the game's popups, as far as OpenMap's questions go: POPUPS[which] is the one up ({ which, text }); a
+-- button calls what the game calls for it, and another popup pushing one out is its OnCancel, "override"
+POPUPS, refusePopups = {}, false
+function StaticPopup_Show(which, a1)
+	local info = StaticPopupDialogs[which]
+	if refusePopups or not info then return nil end
+	local dialog = { which = which, text = info.text:format(a1) }
+	POPUPS[which] = dialog
+	return dialog
+end
+function StaticPopup_Visible(which) if POPUPS[which] then return which, POPUPS[which] end end
+function StaticPopup_Hide(which) POPUPS[which] = nil end
+function Press(which, button)
+	local dialog, info = assert(POPUPS[which], which .. " isn't up"), StaticPopupDialogs[which]
+	POPUPS[which] = nil
+	if button == 1 then info.OnAccept(dialog, nil) else info.OnCancel(dialog, nil, "clicked") end
+end
+function PushOut(which)
+	local dialog, info = assert(POPUPS[which], which .. " isn't up"), StaticPopupDialogs[which]
+	POPUPS[which] = nil
+	if info.OnCancel then info.OnCancel(dialog, nil, "override") end
+end
 -- timers a frame at a time (Frames), so what's done in one can be counted
-QUEUE = {}
-C_Timer.After = function(_, fn) QUEUE[#QUEUE + 1] = fn end
+QUEUE, WAIT = {}, nil            -- (WAIT: the seconds the timer last set was to wait)
+C_Timer.After = function(seconds, fn) QUEUE[#QUEUE + 1], WAIT = fn, seconds end
 function Frames(n)
 	for _ = 1, n or 50 do
 		local q = QUEUE
@@ -263,8 +287,9 @@ def toc_files():
     return out
 
 
-def world(reveal=False):
-    """the addon loaded and the stitched map built on the small world (Explore to reveal as saved: `reveal`)"""
+def world(reveal=False, saved=None):
+    """the addon loaded and the stitched map built on the small world (Explore to reveal as saved: `reveal`;
+    `saved`: the account's saved settings as Lua, for the one-time setup question's tests)"""
     lua = LuaRuntime(unpack_returned_tuples=True)
     lua.execute(STUB.read_text(encoding="utf-8"))
     lua.execute("ns = {}")
@@ -279,6 +304,8 @@ def world(reveal=False):
         load((ADDON / rel).read_text(encoding="utf-8-sig"), rel)
     if reveal:
         lua.execute("OpenMapDB = { worldmap = { exploreReveal = true } }")
+    if saved is not None:
+        lua.execute("OpenMapDB = " + saved)
     lua.execute("""
         FireEvent("ADDON_LOADED", "OpenMap")
         FireEvent("PLAYER_LOGIN")
@@ -634,6 +661,343 @@ class SettingsTests(Case):
             for _, id in ipairs(set) do assert(not rows[id].locked, id) end
             assert(rows.foundOnly[2]() == false and rows["unexplored.hide"][2]() == false)
         """)
+
+
+ASK = "OPENMAP_EXPLORE_REVEAL"
+# (a login: the loading screen gone, then the few seconds the question waits)
+LOGIN = 'FireEvent("LOADING_SCREEN_DISABLED") Frames(3)'
+
+
+class AskTests(Case):
+    """the one-time setup question (Welcome.lua): an account already set up, its first login after the update"""
+    saved = '{ worldmap = { enabled = true, presetAsked = true, unexplored = "hide", foundOnly = true, icons = true } }'
+
+    def setUp(self):
+        self.lua = world(saved=self.saved)
+        self.lua.execute('ASK = "%s"' % ASK)
+
+    def asked(self):
+        return self.lua.eval("POPUPS[ASK] ~= nil")
+
+    def test_an_account_already_set_up_is_asked_once_it_logs_in(self):
+        # (Unexplored areas: Hide and Only places you've found both on before the update: asked all the same)
+        self.assertFalse(self.asked(), "asked before the loading screen had gone")
+        # (the loading screen gone: not at once, but after the login's own popups and ClassicUI Forever's
+        # question, which Window.lua asks 5 seconds in)
+        self.run_lua('FireEvent("LOADING_SCREEN_DISABLED")')
+        self.assertFalse(self.asked(), "asked the moment the loading screen went")
+        self.assertGreater(self.lua.eval("WAIT"), 5)
+        self.run_lua("Frames(3)")
+        self.assertTrue(self.asked())
+        self.run_lua("""
+            assert(mod.db.exploreAsked == nil and mod.db.exploreReveal == false, "nothing set by asking")
+            local info = StaticPopupDialogs[ASK]
+            assert(info.button1 == "Reveal as I explore" and info.button2 == "Show everything")
+            assert(not info.hideOnEscape and info.timeout == 0, "no answer by Escape or by waiting")
+            POPUPS[ASK] = nil
+            FireEvent("LOADING_SCREEN_DISABLED") Frames(3)       -- (another loading screen: not a second time)
+            assert(POPUPS[ASK] == nil, "asked twice in one login")
+        """)
+
+    def test_reveal_as_i_explore(self):
+        self.run_lua(LOGIN)
+        self.run_lua("""
+            mod.db.foundOnly, mod.db.unexplored = false, "show"
+            mod:Refresh() Frames()
+            assert(Shown("Twin Keep") and Fill(1))
+            Press(ASK, 1) Frames()
+            assert(mod.db.exploreAsked == true and mod.db.exploreReveal == true, "the answer saved")
+            assert(not Shown("Twin Keep") and not Fill(1) and mod.Unexplored() == "hide", "at once, no reload")
+            assert(LOG[#LOG]:find("/openmap > Look > Explore to reveal", 1, true), "where to change it, said in chat too")
+        """)
+
+    def test_show_everything(self):
+        self.run_lua(LOGIN)
+        self.run_lua("""
+            Press(ASK, 2) Frames()
+            assert(mod.db.exploreAsked == true and mod.db.exploreReveal == false)
+            -- (the settings the account had are its own still: Hide, and only the places found)
+            assert(mod.db.unexplored == "hide" and mod.db.foundOnly == true and mod.Unexplored() == "hide" and not Shown("Twin Keep"))
+            assert(Fill(1), "... and nothing of Explore to reveal's")
+        """)
+
+    def test_gone_without_a_button_it_asks_again_at_the_next_login(self):
+        self.run_lua(LOGIN)
+        self.run_lua("""
+            PushOut(ASK) Frames(5)                   -- (another popup took its place)
+            assert(mod.db.exploreAsked == nil and mod.db.exploreReveal == false, "taken as an answer")
+            assert(POPUPS[ASK] == nil, "not again in the same login")
+            unanswered = OpenMapDB.worldmap.exploreAsked == nil
+        """)
+        self.assertTrue(self.lua.eval("unanswered"), "saved as answered")
+        again = world(saved=self.saved)              # (the next login, the settings as they were saved)
+        again.execute('ASK = "%s" ' % ASK + LOGIN)
+        self.assertTrue(again.eval("POPUPS[ASK] ~= nil"), "not asked again at the next login")
+
+    def test_answered_it_isnt_asked_again(self):
+        for button in (1, 2):
+            lua = world(saved=self.saved)
+            lua.execute('ASK = "%s" ' % ASK + LOGIN)
+            lua.execute("Press(ASK, %d) Frames() saved = OpenMapDB.worldmap" % button)
+            self.assertTrue(lua.eval("saved.exploreAsked"))
+            reveal = "true" if button == 1 else "false"
+            again = world(saved='{ worldmap = { enabled = true, presetAsked = true, exploreAsked = true, exploreReveal = %s } }' % reveal)
+            again.execute('ASK = "%s" ' % ASK + LOGIN)
+            self.assertFalse(again.eval("POPUPS[ASK] ~= nil"), "asked again after button %d" % button)
+            self.assertEqual(again.eval("mod.ExploreReveal()"), button == 1)
+
+    def test_not_in_combat(self):
+        self.run_lua("""
+            IN_COMBAT = true
+            FireEvent("LOADING_SCREEN_DISABLED") Frames(5)
+            assert(POPUPS[ASK] == nil, "asked in combat")
+            IN_COMBAT = false
+            Frames(5)
+            assert(POPUPS[ASK] == nil, "not by waiting: as combat ends")
+            FireEvent("PLAYER_REGEN_ENABLED") Frames(3)
+            assert(POPUPS[ASK] ~= nil, "not asked as combat ended")
+            -- (and /openmap setup, typed in combat, says so and shows nothing)
+            POPUPS[ASK] = nil
+            IN_COMBAT = true
+            SlashCmdList.OPENMAP("setup")
+            assert(POPUPS[ASK] == nil and LOG[#LOG]:find("Not in combat", 1, true))
+        """)
+
+    def test_never_over_openmaps_other_questions(self):
+        self.run_lua("""
+            -- ClassicUI Forever's question up (Window.lua's): this one waits for its answer
+            StaticPopupDialogs.OPENMAP_CLASSICUI_MAP = { text = "%s" }
+            StaticPopup_Show("OPENMAP_CLASSICUI_MAP", "")
+            FireEvent("LOADING_SCREEN_DISABLED") Frames(6)
+            assert(POPUPS[ASK] == nil, "over ClassicUI Forever's question")
+            POPUPS.OPENMAP_CLASSICUI_MAP = nil
+            Frames(3)
+            assert(POPUPS[ASK] ~= nil, "not asked once that was answered")
+        """)
+
+    def test_the_gamepad_ui_and_openmap_off(self):
+        self.run_lua("""
+            -- the Gamepad UI on, the map left to Blizzard: not asked about a map that isn't up
+            mod.padWaits = true
+            FireEvent("LOADING_SCREEN_DISABLED") Frames(6)
+            assert(POPUPS[ASK] == nil)
+            mod.PadViewOn = function() return true end       -- (the controller view: OpenMap's map again)
+            Frames(3)
+            assert(POPUPS[ASK] ~= nil)
+        """)
+        off = world(saved='{ worldmap = { enabled = false, presetAsked = true } }')
+        off.execute('ASK = "%s" ' % ASK + LOGIN + " Frames(5)")
+        self.assertFalse(off.eval("POPUPS[ASK] ~= nil"), "asked with OpenMap turned off")
+
+    def test_refused_by_the_game_it_tries_again(self):
+        self.run_lua("""
+            refusePopups = true                      -- (a cinematic, no room for another popup)
+            FireEvent("LOADING_SCREEN_DISABLED") Frames(5)
+            assert(POPUPS[ASK] == nil)
+            refusePopups = false
+            Frames(3)
+            assert(POPUPS[ASK] ~= nil)
+        """)
+
+    def test_the_text_and_where_to_change_it(self):
+        self.run_lua(LOGIN)
+        text = self.lua.eval("POPUPS[ASK].text")
+        self.assertEqual(text, "\n\n".join([
+            "How should OpenMap show the world? You're asked once, for all your characters.",
+            "|cffffd100Reveal as I explore|r: unexplored land stays hidden, and dungeons, boats, flight masters and townsfolk show once"
+            " the character has found them, as on the game's own map.",
+            "|cffffd100Show everything|r: the whole map and every place from the start, as OpenMap has always shown it.",
+            "To change it later: /openmap > Look > Explore to reveal\n"
+            "Or: Options > AddOns > OpenMap > Open OpenMap's settings > Look > Explore to reveal",
+        ]))
+
+    def test_the_path_is_the_interfaces_own_words(self):
+        # (another language: each step is the text the interface itself shows there, never a second translation)
+        self.run_lua("""
+            local L = ns.L
+            L["Look"], L["Explore to reveal"], L["Open OpenMap's settings"] = "Aussehen", "Erkunden deckt auf", "OpenMaps Einstellungen"
+            L["Reveal as I explore"], L["To change it later: %s"], L["Or: %s"] = "Beim Erkunden", "Später ändern: %s", "Oder: %s"
+            GAMEMENU_OPTIONS, SETTINGS_TAB_ADDONS = "Optionen", "Add-ons"      -- (the game's own, in that client)
+            local menu, options = mod.ExplorePaths()
+            assert(menu == "/openmap > Aussehen > Erkunden deckt auf", menu)
+            assert(options == "Optionen > Add-ons > OpenMap > OpenMaps Einstellungen > Aussehen > Erkunden deckt auf", options)
+            -- ... which are the menu's own tab and row, and the options' own heading and switch
+            local rows = Rows()
+            assert(rows.exploreReveal[1] == "Erkunden deckt auf")
+            local o = mod:Options()
+            assert(o.exploreReveal.name == "Erkunden deckt auf" and o.lookHeader.name == "Aussehen")
+            StaticPopupDialogs[ASK] = nil
+            mod:AskExplore()
+            local text = POPUPS[ASK].text
+            assert(text:find("Später ändern: /openmap > Aussehen > Erkunden deckt auf\\nOder: Optionen > Add-ons > OpenMap > OpenMaps Einstellungen > Aussehen > Erkunden deckt auf", 1, true), text)
+            assert(text:find("|cffffd100Beim Erkunden|r", 1, true) and StaticPopupDialogs[ASK].button1 == "Beim Erkunden", "the button's own name in the text")
+        """)
+
+    def test_openmap_setup_asks_again(self):
+        self.run_lua(LOGIN)
+        self.run_lua("""
+            Press(ASK, 2) Frames()
+            SlashCmdList.OPENMAP("setup")
+            assert(POPUPS[ASK] ~= nil, "/openmap setup")
+            Press(ASK, 1) Frames()
+            assert(mod.db.exploreReveal == true and mod.db.exploreAsked == true)
+        """)
+
+    def test_answered_by_openmap_setup_while_the_question_waited(self):
+        self.run_lua("""
+            StaticPopupDialogs.OPENMAP_CLASSICUI_MAP = { text = "%s" }
+            StaticPopup_Show("OPENMAP_CLASSICUI_MAP", "")    -- (ClassicUI Forever's question up: this one waits)
+            FireEvent("LOADING_SCREEN_DISABLED") Frames(4)
+            SlashCmdList.OPENMAP("setup")
+            Press(ASK, 2)
+            POPUPS.OPENMAP_CLASSICUI_MAP = nil
+            Frames(4)
+            assert(POPUPS[ASK] == nil, "asked again, though answered meanwhile")
+        """)
+
+
+class NewInstallTests(Case):
+    """a new install: the question at its first login, and the choice of map (Classic or OpenMap) as the map
+    first opens, one at a time"""
+
+    def setUp(self):
+        self.lua = world(saved="nil")
+        self.lua.execute('ASK = "%s"' % ASK)
+        self.lua.execute("""
+            local function upvalue(fn, wanted)
+                for i = 1, 60 do
+                    local name, value = debug.getupvalue(fn, i)
+                    if name == wanted then return value end
+                end
+            end
+            -- the choice's window (Welcome.lua's), and one of its two buttons pressed (1: Classic, 2: OpenMap)
+            function Welcome() return upvalue(mod.ShowWelcome, "frame") end
+            function Pick(n)
+                local seen = 0
+                for _, child in ipairs({ Welcome():GetChildren() }) do
+                    if child:GetObjectType() == "Button" and child:GetScript("OnClick") and child.__text ~= nil then
+                        seen = seen + 1
+                        if seen == n then return child:GetScript("OnClick")(child) end
+                    end
+                end
+                error("no button " .. n)
+            end
+        """)
+
+    def test_asked_at_its_first_login_too(self):
+        self.run_lua("assert(mod.fresh and mod.db.presetAsked == false and mod.db.exploreAsked == nil)")
+        self.run_lua(LOGIN)
+        self.assertTrue(self.lua.eval("POPUPS[ASK] ~= nil"))
+
+    def test_the_choice_of_map_waits_for_the_answer(self):
+        self.run_lua(LOGIN)
+        self.run_lua("""
+            mod.WelcomeIfDue()                       -- (the map opened with the question still up)
+            assert(not (Welcome() and Welcome():IsShown()), "the choice of map over the question")
+            Press(ASK, 1) Frames()
+            assert(Welcome() and Welcome():IsShown(), "the choice of map once it was answered")
+            -- neither of its presets undoes the answer
+            Pick(1)
+            assert(mod.db.presetAsked == true and mod.db.unexplored == "hide" and mod.db.exploreReveal == true)
+        """)
+
+    def test_the_question_waits_for_the_choice_of_map(self):
+        self.run_lua("""
+            mod:ShowWelcome()                        -- (the map opened first)
+            assert(Welcome():IsShown())
+            FireEvent("LOADING_SCREEN_DISABLED") Frames(6)
+            assert(POPUPS[ASK] == nil, "the question over the choice of map")
+            Pick(2)
+            assert(not Welcome():IsShown() and mod.db.exploreReveal == false)
+            Frames(3)
+            assert(POPUPS[ASK] ~= nil, "asked once the choice was made")
+        """)
+
+
+class ClassicQuestionTests(unittest.TestCase):
+    """ClassicUI Forever's question (Window.lua's AskClassicMap, its source alone) never comes up over the
+    one-time setup question: it waits for that one's answer, and isn't counted as asked meanwhile"""
+
+    def setUp(self):
+        src = (ADDON / "Map" / "Window.lua").read_text(encoding="utf-8")
+        m = re.search(r"\nlocal function AskClassicMap\(\)\n.*?\nend\n", src, re.S)
+        self.assertIsNotNone(m, "AskClassicMap in Window.lua")
+        self.lua = LuaRuntime(unpack_returned_tuples=True)
+        self.lua.execute("""
+            asking, combat, shown, later = true, false, {}, {}
+            afterCombat = false
+            mod = { db = {}, ExploreAsking = function() return asking end }
+            ns = { Print = function() end }
+            L = setmetatable({}, { __index = function(_, k) return k end })
+            StaticPopupDialogs = {}
+            function InCombatLockdown() return combat end
+            function StaticPopup_Show(which) shown[#shown + 1] = which end
+            C_Timer = { After = function(_, fn) later[#later + 1] = fn end }
+        """)
+        self.lua.execute("local AskClassicMap\n" + m.group(0).replace("local function AskClassicMap()", "function AskClassicMap()", 1)
+                         + "\nAsk = AskClassicMap")
+
+    def test_waits_for_the_setup_questions_answer(self):
+        self.lua.execute("""
+            Ask()
+            assert(#shown == 0 and not mod.db.classicMapAsked, "over the setup question, or counted as asked")
+            assert(#later == 1, "not tried again")
+            asking = false
+            later[1]()
+            assert(#shown == 1 and shown[1] == "OPENMAP_CLASSICUI_MAP" and mod.db.classicMapAsked == true)
+        """)
+
+
+class TranslationTests(unittest.TestCase):
+    """the setup question's texts in every language's JSON and built file: real UTF-8, read back as written
+    (text written through the wrong encoding reads as "Ã¤" for "ä": none of that), a %s where the English
+    has one, and nothing that names a step of the click path (those are put in by the code, each as the
+    interface names it)"""
+    TEXTS = [
+        "How should OpenMap show the world? You're asked once, for all your characters.",
+        "Reveal as I explore",
+        "Show everything",
+        "%s: unexplored land stays hidden, and dungeons, boats, flight masters and townsfolk show once the character has found them, as on the game's own map.",
+        "%s: the whole map and every place from the start, as OpenMap has always shown it.",
+        "To change it later: %s",
+        "Or: %s",
+    ]
+    LOCALES = ["deDE", "esES", "esMX", "frFR", "itIT", "koKR", "ptBR", "ruRU", "zhCN", "zhTW"]
+
+    @staticmethod
+    def twice_encoded(text):
+        """whether the text is UTF-8 that was read as Windows-1252 or Latin-1 and written as UTF-8 again"""
+        for wrong in ("cp1252", "latin-1"):
+            try:
+                if text.encode(wrong).decode("utf-8") != text:
+                    return True
+            except (UnicodeEncodeError, UnicodeDecodeError):
+                pass
+        return False
+
+    def test_every_language_has_them_as_written(self):
+        code = (ADDON / "Map" / "Welcome.lua").read_text(encoding="utf-8")
+        for en in self.TEXTS:
+            self.assertIn('L["%s"]' % en, code, "the text the code asks for")
+        for loc in self.LOCALES:
+            tr = json.loads((ROOT / "tools" / "locale" / (loc + ".json")).read_bytes().decode("utf-8"))
+            built = (ADDON / "Locales" / (loc + ".lua")).read_bytes().decode("utf-8")
+            for en in self.TEXTS:
+                t = tr.get(en)
+                self.assertTrue(t, "%s: %r" % (loc, en))
+                self.assertFalse(self.twice_encoded(t), "%s: %r is encoded twice" % (loc, t))
+                self.assertEqual(t.count("%s"), en.count("%s"), (loc, en))
+                self.assertNotIn(" > ", t, (loc, en))
+                self.assertNotIn("/openmap", t, (loc, en))
+                self.assertIn('L["%s"] = "%s"' % (en, t), built, "%s: built as written" % loc)
+
+    def test_german_has_its_umlauts(self):
+        tr = json.loads((ROOT / "tools" / "locale" / "deDE.json").read_bytes().decode("utf-8"))
+        self.assertEqual(tr["To change it later: %s"], "Sp\u00e4ter \u00e4ndern: %s")
+        self.assertIn("f\u00fcr alle Eure Charaktere", tr[self.TEXTS[0]])
+        raw = (ADDON / "Locales" / "deDE.lua").read_bytes()
+        self.assertIn("Sp\u00e4ter \u00e4ndern".encode("utf-8"), raw)          # (c3 a4: one character each)
+        self.assertNotIn("Sp\u00c3\u00a4ter".encode("utf-8"), raw)             # ("SpÃ¤ter": encoded twice)
 
 
 class OverTests(unittest.TestCase):

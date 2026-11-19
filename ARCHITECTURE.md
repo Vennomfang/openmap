@@ -181,6 +181,15 @@ under hidden land (Close.lua). `S.SetExploreReveal` tells Stitch.lua, and `S.Ref
 built, somewhere explored, a city or a dungeon entered) looks at all of it again (`places.Reveal`). Off,
 none of it runs. Not held back: other addons' icons, your own pins and drawings, zone names and levels
 (the game's own map names every zone), and a dungeon's map opened from an entrance that's found.
+Every account is asked once which it wants (Welcome.lua's one-time setup question, a popup a few
+seconds after the loading screen of the first login with a version that has the option, a new install
+or not): "Reveal as I explore" or "Show everything". `exploreAsked` is set only by one of its two
+buttons (no Escape, no timeout; pushed out by another popup, it's asked again at the next login). It
+waits out combat, the new install's choice of map and ClassicUI Forever's question (which wait for it
+in turn), and the Gamepad UI while that has OpenMap stand down. Its text ends with where to change it,
+the steps joined by " > " and each the interface's own text in the client's language
+(`mod.ExplorePaths`: the menu's tab and row, the game's own words for Options and AddOns), so no
+language can name a step differently from the button it means. `/openmap setup` asks again.
 
 Border colours are matched by a tinted copy of each zone drawn through its border-band
 mask (`MapBand`) with the multipliers in `Data/Grade.lua`. Everything is placed once, in

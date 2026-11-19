@@ -57,6 +57,8 @@ end
 local function AskClassicMap()
 	if InCombatLockdown() then afterCombat = true return end   -- (a reload waits out combat)
 	if mod.db.classicMapAsked or not StaticPopup_Show then return end
+	-- (not over the one-time setup question, Welcome.lua's: once that's answered)
+	if mod.ExploreAsking and mod.ExploreAsking() then C_Timer.After(2, AskClassicMap) return end
 	mod.db.classicMapAsked = true
 	StaticPopupDialogs.OPENMAP_CLASSICUI_MAP = {
 		text = L["ClassicUI Forever's World map option is on. It lays out the world map window itself, which is known to cause problems with OpenMap: the window can't be resized or moved, and in combat parts of the map can go missing.\n\nTurn that option off? Your interface will reload."],
